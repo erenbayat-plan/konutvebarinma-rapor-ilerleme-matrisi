@@ -2,8 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   KONUT_BARINMA_CHAPTERS, 
   POLITIKA_YATIRIM_CHAPTERS,
-  REPORT_STATUS_LABEL, 
-  REPORT_STATUS_SHORT_LABEL,
   STATUS_PROGRESS_MAP,
   computeAutoStatusForAnalyses,
   SPATIAL_STATUS_KEYS,
@@ -11,27 +9,29 @@ import {
   getStatusLabel,
   ReportStatusType,
   ReportItem, 
-  ReportChapterGroup 
+  ReportChapterGroup,
+  AnalysisItem
 } from './reportData';
 import { 
-  fetchGlobalCloudState, 
-  pushGlobalCloudState, 
   queueGlobalCloudPush, 
   subscribeToTabBroadcast, 
   subscribeToCloudState, 
   AppState,
   ReportStatusItem,
-  CustomSubSection
+  CustomSubSection,
+  SectionOverride
 } from './syncService';
 import { ReportStats } from './components/ReportStats';
 import { ChapterCard } from './components/ChapterCard';
 import { ExportModal } from './components/ExportModal';
 import { HeaderCountdown } from './components/HeaderCountdown';
+import type { HeadingFormData } from './components/HeadingModal';
 
 const REPORT_STATUS_KEY = 'plan2050_kb_report_status_v2';
 const CUSTOM_ITEMS_KEY = 'plan2050_kb_custom_items_v2';
 const CHAPTER_NOTES_KEY = 'plan2050_kb_chapter_notes_v2';
 const ANALYSIS_STATUS_KEY = 'plan2050_kb_analysis_statuses_v2';
+const SECTION_OVERRIDES_KEY = 'plan2050_kb_section_overrides_v2';
 
 export default function App() {
   // Primary persistent state
@@ -62,6 +62,15 @@ export default function App() {
     }
   });
 
+  const [sectionOverrides, setSectionOverrides] = useState<Record<string, SectionOverride>>(() => {
+    try {
+      const saved = localStorage.getItem(SECTION_OVERRIDES_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   const [chapterNotes, setChapterNotes] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem(CHAPTER_NOTES_KEY);
@@ -80,7 +89,7 @@ export default function App() {
   const [collapsedChapters, setCollapsedChapters] = useState<Record<string, boolean>>({});
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'mevcut_durum' | 'politika'>('mevcut_durum');
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'connected'>('connected');
+  const [, setCloudSyncStatus] = useState<'synced' | 'saving' | 'connected'>('connected');
 
   const currentChapters = activeTab === 'mevcut_durum' ? KONUT_BARINMA_CHAPTERS : POLITIKA_YATIRIM_CHAPTERS;
 
@@ -108,6 +117,12 @@ export default function App() {
 
   useEffect(() => {
     try {
+      localStorage.setItem(SECTION_OVERRIDES_KEY, JSON.stringify(sectionOverrides));
+    } catch (e) { console.error(e); }
+  }, [sectionOverrides]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(CHAPTER_NOTES_KEY, JSON.stringify(chapterNotes));
     } catch (e) { console.error(e); }
   }, [chapterNotes]);
@@ -129,6 +144,9 @@ export default function App() {
       if (cloudData.customSubSections) {
         setCustomItems(prev => JSON.stringify(prev) !== JSON.stringify(cloudData.customSubSections) ? cloudData.customSubSections! : prev);
       }
+      if (cloudData.sectionOverrides) {
+        setSectionOverrides(prev => JSON.stringify(prev) !== JSON.stringify(cloudData.sectionOverrides) ? cloudData.sectionOverrides! : prev);
+      }
       if (cloudData.chapterNotes) {
         setChapterNotes(prev => JSON.stringify(prev) !== JSON.stringify(cloudData.chapterNotes) ? cloudData.chapterNotes! : prev);
       }
@@ -140,6 +158,7 @@ export default function App() {
       if (tabState.reportStatus) setReportStatus(tabState.reportStatus);
       if (tabState.analysisStatuses) setAnalysisStatuses(tabState.analysisStatuses);
       if (tabState.customSubSections) setCustomItems(tabState.customSubSections);
+      if (tabState.sectionOverrides) setSectionOverrides(tabState.sectionOverrides);
       if (tabState.chapterNotes) setChapterNotes(tabState.chapterNotes);
       setCloudSyncStatus('synced');
     });
@@ -160,7 +179,8 @@ export default function App() {
     nextReport: Record<string, ReportStatusItem>,
     nextAnalysis: Record<string, 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede'>,
     nextCustom: Record<string, CustomSubSection[]>,
-    nextNotes: Record<string, string>
+    nextNotes: Record<string, string>,
+    nextOverrides: Record<string, SectionOverride>
   ) => {
     const newVersion = Date.now();
     localVersionRef.current = newVersion;
@@ -173,6 +193,7 @@ export default function App() {
         analysisStatuses: nextAnalysis,
         customSubSections: nextCustom,
         chapterNotes: nextNotes,
+        sectionOverrides: nextOverrides,
         lastUpdated: newVersion
       }),
       (status) => {
@@ -190,7 +211,7 @@ export default function App() {
     const current = reportStatus[id] || { status: 'not_started', progress: 0, author: '', targetPages: '', note: '', driveLink: '' };
     const updated = { ...reportStatus, [id]: { ...current, ...updates } };
     setReportStatus(updated);
-    triggerCloudSync(updated, analysisStatuses, customItems, chapterNotes);
+    triggerCloudSync(updated, analysisStatuses, customItems, chapterNotes, sectionOverrides);
   };
 
   const handleUpdateAnalysisStatus = (analysisId: string, status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede') => {
@@ -201,12 +222,37 @@ export default function App() {
     let parentItem: ReportItem | null = null;
     for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
       for (const it of ch.items) {
-        if (it.analizler && it.analizler.some(a => a.id === analysisId)) {
-          parentItem = it;
+        const itemAnalyses = sectionOverrides[it.id]?.analizler || it.analizler || [];
+        if (itemAnalyses.some(a => a.id === analysisId)) {
+          parentItem = {
+            ...it,
+            analizler: itemAnalyses
+          };
           break;
         }
       }
       if (parentItem) break;
+    }
+
+    // Check custom items
+    if (!parentItem) {
+      for (const chNum of Object.keys(customItems)) {
+        const list = customItems[chNum] || [];
+        for (const sub of list) {
+          if (sub.analizler && sub.analizler.some(a => a.id === analysisId)) {
+            parentItem = {
+              id: `custom_${sub.id}`,
+              level1: '',
+              level1Num: chNum,
+              code: sub.code,
+              title: sub.title,
+              analizler: sub.analizler
+            };
+            break;
+          }
+        }
+        if (parentItem) break;
+      }
     }
 
     let nextReportStatus = reportStatus;
@@ -216,9 +262,6 @@ export default function App() {
       const currentParent = reportStatus[parentId];
       const auto = computeAutoStatusForAnalyses(parentItem.analizler, updatedAnalysis);
 
-      // Kural: %70'in üstü (80, 85, 95, 98, 100) manuel kontrol edilebilir.
-      // Eğer mevcut durum manuel olarak %70'in üzerine çıkarılmışsa otomatik olarak düşürülmez.
-      // %70 ve altındaki durumlarda analizlerin durumuna göre otomatik atanır.
       const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
       const isManualOver70 = currentProg > 70;
 
@@ -243,86 +286,389 @@ export default function App() {
       }
     }
 
-    triggerCloudSync(nextReportStatus, updatedAnalysis, customItems, chapterNotes);
+    triggerCloudSync(nextReportStatus, updatedAnalysis, customItems, chapterNotes, sectionOverrides);
   };
+
+  // --- Headings Actions (3rd and 4th Degree Only) ---
 
   const handleAddSubSection = (
     chapterNum: string, 
-    title: string, 
-    code: string, 
-    scope?: string, 
-    pages?: string, 
-    level2?: string,
-    level3?: string,
-    level4?: string,
-    sartnameUyum?: string
+    formData: HeadingFormData, 
+    degree: 3 | 4, 
+    parentCode?: string
   ) => {
+    const parts = formData.code.split('.').filter(Boolean);
+    let level2 = '';
+    let level3 = '';
+    let level4 = '';
+
+    if (degree === 3) {
+      level2 = parentCode || `${parts[0]}.${parts[1]}`;
+      level3 = `${formData.code} ${formData.title}`;
+    } else if (degree === 4) {
+      level2 = `${parts[0]}.${parts[1]}`;
+      level3 = parentCode || `${parts[0]}.${parts[1]}.${parts[2]}`;
+      level4 = `${formData.code} ${formData.title}`;
+    }
+
     const newSub: CustomSubSection = {
-      id: `custom_${Date.now()}`,
+      id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       chapterNum,
-      code,
-      title,
+      code: formData.code,
+      title: formData.title,
       level2,
       level3,
       level4,
-      sartnameUyum,
-      scope: scope || '',
-      defaultPages: pages || '8-10 sf'
+      sartnameUyum: formData.sartnameUyum || '',
+      scope: formData.icerikOzeti || '',
+      defaultPages: formData.defaultPages || '8-10 sf',
+      analizler: []
     };
+
     const currentList = customItems[chapterNum] || [];
-    const updatedList = [...currentList, newSub];
-    const updatedCustoms = { ...customItems, [chapterNum]: updatedList };
+    const updatedCustoms = { ...customItems, [chapterNum]: [...currentList, newSub] };
     setCustomItems(updatedCustoms);
 
-    const id = `konut_${code.replace(/\./g, '_')}`;
+    const id = `konut_${formData.code.replace(/\./g, '_')}`;
     const updatedReport = {
       ...reportStatus,
       [id]: {
-        status: 'not_started' as const,
+        status: 'baslanmadi' as ReportStatusType,
         progress: 0,
         author: '',
-        targetPages: pages || '8-10 sf',
+        targetPages: formData.defaultPages || '8-10 sf',
         note: '',
         driveLink: ''
       }
     };
     setReportStatus(updatedReport);
-    triggerCloudSync(updatedReport, analysisStatuses, updatedCustoms, chapterNotes);
+
+    triggerCloudSync(updatedReport, analysisStatuses, updatedCustoms, chapterNotes, sectionOverrides);
   };
 
-  const handleDeleteSubSection = (id: string, customId?: string) => {
-    if (!customId) return;
-    const nextCustoms: Record<string, CustomSubSection[]> = {};
-    Object.keys(customItems).forEach(chNum => {
-      nextCustoms[chNum] = (customItems[chNum] || []).filter(sub => sub.id !== customId);
-    });
-    setCustomItems(nextCustoms);
+  const handleEditSubSection = (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    updates: HeadingFormData
+  ) => {
+    const oldId = getItemId(item);
+    const newId = `konut_${updates.code.replace(/\./g, '_')}`;
 
+    let nextCustoms = customItems;
+    let nextOverrides = sectionOverrides;
     const nextReport = { ...reportStatus };
-    delete nextReport[id];
+
+    if (item.isCustom && item.customId) {
+      const nextList: Record<string, CustomSubSection[]> = {};
+      Object.keys(customItems).forEach(chNum => {
+        nextList[chNum] = (customItems[chNum] || []).map(sub => {
+          if (sub.id === item.customId) {
+            return {
+              ...sub,
+              code: updates.code,
+              title: updates.title,
+              defaultPages: updates.defaultPages || sub.defaultPages,
+              scope: updates.icerikOzeti !== undefined ? updates.icerikOzeti : sub.scope,
+              sartnameUyum: updates.sartnameUyum !== undefined ? updates.sartnameUyum : sub.sartnameUyum
+            };
+          }
+          return sub;
+        });
+      });
+      nextCustoms = nextList;
+      setCustomItems(nextCustoms);
+    } else {
+      nextOverrides = {
+        ...sectionOverrides,
+        [item.id]: {
+          ...sectionOverrides[item.id],
+          code: updates.code,
+          title: updates.title,
+          defaultPages: updates.defaultPages,
+          scope: updates.icerikOzeti,
+          sartnameUyum: updates.sartnameUyum
+        }
+      };
+      setSectionOverrides(nextOverrides);
+    }
+
+    // If code changed, migrate reportStatus
+    if (oldId !== newId && nextReport[oldId]) {
+      nextReport[newId] = {
+        ...nextReport[oldId],
+        targetPages: updates.defaultPages || nextReport[oldId].targetPages
+      };
+      delete nextReport[oldId];
+      setReportStatus(nextReport);
+    }
+
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+  };
+
+  const handleDeleteSubSection = (
+    item: ReportItem & { customId?: string; isCustom?: boolean }
+  ) => {
+    const oldId = getItemId(item);
+    let nextCustoms = customItems;
+    let nextOverrides = sectionOverrides;
+    const nextReport = { ...reportStatus };
+
+    if (item.isCustom && item.customId) {
+      const nextList: Record<string, CustomSubSection[]> = {};
+      Object.keys(customItems).forEach(chNum => {
+        nextList[chNum] = (customItems[chNum] || []).filter(
+          sub => sub.id !== item.customId && !sub.code.startsWith(item.code + '.')
+        );
+      });
+      nextCustoms = nextList;
+      setCustomItems(nextCustoms);
+    } else {
+      nextOverrides = {
+        ...sectionOverrides,
+        [item.id]: {
+          ...sectionOverrides[item.id],
+          deleted: true
+        }
+      };
+      // Mark child items as deleted
+      for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+        for (const it of ch.items) {
+          if (it.code.startsWith(item.code + '.') && it.code !== item.code) {
+            nextOverrides[it.id] = {
+              ...nextOverrides[it.id],
+              deleted: true
+            };
+          }
+        }
+      }
+      setSectionOverrides(nextOverrides);
+    }
+
+    delete nextReport[oldId];
     setReportStatus(nextReport);
 
-    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes);
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+  };
+
+  // --- Spatial Analyses Actions ---
+
+  const handleAddAnalysis = (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    data: { name: string; category?: string; status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede' }
+  ) => {
+    const newAnalysisId = `an_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newAnalysis: AnalysisItem = {
+      id: newAnalysisId,
+      name: data.name,
+      category: data.category,
+      status: data.status
+    };
+
+    const currentAnalyses = item.analizler || [];
+    const updatedAnalyses = [...currentAnalyses, newAnalysis];
+
+    const nextAnalysisStatuses = {
+      ...analysisStatuses,
+      [newAnalysisId]: data.status
+    };
+    setAnalysisStatuses(nextAnalysisStatuses);
+
+    let nextCustoms = customItems;
+    let nextOverrides = sectionOverrides;
+
+    if (item.isCustom && item.customId) {
+      const nextList: Record<string, CustomSubSection[]> = {};
+      Object.keys(customItems).forEach(chNum => {
+        nextList[chNum] = (customItems[chNum] || []).map(sub => {
+          if (sub.id === item.customId) {
+            return { ...sub, analizler: updatedAnalyses };
+          }
+          return sub;
+        });
+      });
+      nextCustoms = nextList;
+      setCustomItems(nextCustoms);
+    } else {
+      nextOverrides = {
+        ...sectionOverrides,
+        [item.id]: {
+          ...sectionOverrides[item.id],
+          analizler: updatedAnalyses
+        }
+      };
+      setSectionOverrides(nextOverrides);
+    }
+
+    // Recalculate parent auto-status
+    const parentId = getItemId(item);
+    const auto = computeAutoStatusForAnalyses(updatedAnalyses, nextAnalysisStatuses);
+    const currentParent = reportStatus[parentId];
+    const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
+
+    let nextReportStatus = reportStatus;
+    if (currentProg <= 70) {
+      nextReportStatus = {
+        ...reportStatus,
+        [parentId]: {
+          ...(currentParent || { author: '', note: '', driveLink: '', targetPages: item.defaultPages || '' }),
+          status: auto.status,
+          progress: auto.progress
+        }
+      };
+      setReportStatus(nextReportStatus);
+    }
+
+    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+  };
+
+  const handleEditAnalysis = (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    analysisId: string,
+    updates: { name: string; category?: string; status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede' }
+  ) => {
+    const updatedAnalyses = (item.analizler || []).map(a => {
+      if (a.id === analysisId) {
+        return {
+          ...a,
+          name: updates.name,
+          category: updates.category,
+          status: updates.status
+        };
+      }
+      return a;
+    });
+
+    const nextAnalysisStatuses = {
+      ...analysisStatuses,
+      [analysisId]: updates.status
+    };
+    setAnalysisStatuses(nextAnalysisStatuses);
+
+    let nextCustoms = customItems;
+    let nextOverrides = sectionOverrides;
+
+    if (item.isCustom && item.customId) {
+      const nextList: Record<string, CustomSubSection[]> = {};
+      Object.keys(customItems).forEach(chNum => {
+        nextList[chNum] = (customItems[chNum] || []).map(sub => {
+          if (sub.id === item.customId) {
+            return { ...sub, analizler: updatedAnalyses };
+          }
+          return sub;
+        });
+      });
+      nextCustoms = nextList;
+      setCustomItems(nextCustoms);
+    } else {
+      nextOverrides = {
+        ...sectionOverrides,
+        [item.id]: {
+          ...sectionOverrides[item.id],
+          analizler: updatedAnalyses
+        }
+      };
+      setSectionOverrides(nextOverrides);
+    }
+
+    // Recalculate parent auto-status
+    const parentId = getItemId(item);
+    const auto = computeAutoStatusForAnalyses(updatedAnalyses, nextAnalysisStatuses);
+    const currentParent = reportStatus[parentId];
+    const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
+
+    let nextReportStatus = reportStatus;
+    if (currentProg <= 70) {
+      nextReportStatus = {
+        ...reportStatus,
+        [parentId]: {
+          ...(currentParent || { author: '', note: '', driveLink: '', targetPages: item.defaultPages || '' }),
+          status: auto.status,
+          progress: auto.progress
+        }
+      };
+      setReportStatus(nextReportStatus);
+    }
+
+    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+  };
+
+  const handleDeleteAnalysis = (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    analysisId: string
+  ) => {
+    const updatedAnalyses = (item.analizler || []).filter(a => a.id !== analysisId);
+
+    const nextAnalysisStatuses = { ...analysisStatuses };
+    delete nextAnalysisStatuses[analysisId];
+    setAnalysisStatuses(nextAnalysisStatuses);
+
+    let nextCustoms = customItems;
+    let nextOverrides = sectionOverrides;
+
+    if (item.isCustom && item.customId) {
+      const nextList: Record<string, CustomSubSection[]> = {};
+      Object.keys(customItems).forEach(chNum => {
+        nextList[chNum] = (customItems[chNum] || []).map(sub => {
+          if (sub.id === item.customId) {
+            return { ...sub, analizler: updatedAnalyses };
+          }
+          return sub;
+        });
+      });
+      nextCustoms = nextList;
+      setCustomItems(nextCustoms);
+    } else {
+      nextOverrides = {
+        ...sectionOverrides,
+        [item.id]: {
+          ...sectionOverrides[item.id],
+          analizler: updatedAnalyses
+        }
+      };
+      setSectionOverrides(nextOverrides);
+    }
+
+    // Recalculate parent auto-status
+    const parentId = getItemId(item);
+    const auto = computeAutoStatusForAnalyses(updatedAnalyses, nextAnalysisStatuses);
+    const currentParent = reportStatus[parentId];
+    const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
+
+    let nextReportStatus = reportStatus;
+    if (currentProg <= 70) {
+      nextReportStatus = {
+        ...reportStatus,
+        [parentId]: {
+          ...(currentParent || { author: '', note: '', driveLink: '', targetPages: item.defaultPages || '' }),
+          status: auto.status,
+          progress: auto.progress
+        }
+      };
+      setReportStatus(nextReportStatus);
+    }
+
+    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides);
   };
 
   const handleUpdateChapterNotes = (chapterNum: string, note: string) => {
     const updatedNotes = { ...chapterNotes, [chapterNum]: note };
     setChapterNotes(updatedNotes);
-    triggerCloudSync(reportStatus, analysisStatuses, customItems, updatedNotes);
+    triggerCloudSync(reportStatus, analysisStatuses, customItems, updatedNotes, sectionOverrides);
   };
 
   const handleResetAll = () => {
     setReportStatus({});
     setAnalysisStatuses({});
     setCustomItems({});
+    setSectionOverrides({});
     setChapterNotes({});
     try {
       localStorage.removeItem(REPORT_STATUS_KEY);
       localStorage.removeItem(ANALYSIS_STATUS_KEY);
       localStorage.removeItem(CUSTOM_ITEMS_KEY);
+      localStorage.removeItem(SECTION_OVERRIDES_KEY);
       localStorage.removeItem(CHAPTER_NOTES_KEY);
     } catch {}
-    triggerCloudSync({}, {}, {}, {});
+    triggerCloudSync({}, {}, {}, {}, {});
   };
 
   const handleToggleCollapse = (chapterNum: string) => {
@@ -348,22 +694,16 @@ export default function App() {
   const distinctAuthors = useMemo(() => {
     const set = new Set<string>();
     Object.values(reportStatus).forEach((item: ReportStatusItem) => {
-      if (item && item.author && item.author.trim()) {
+      if (item.author && item.author.trim()) {
         set.add(item.author.trim());
       }
     });
     return Array.from(set).sort();
   }, [reportStatus]);
 
-  // Helper to calculate stats for a list of chapters
-  const calculateStatsForChapters = (chapters: typeof KONUT_BARINMA_CHAPTERS) => {
+  // Dynamic calculation for Stats
+  const calculateStatsForChapters = (chapters: ReportChapterGroup[]) => {
     let total = 0;
-    let sumProgress = 0;
-    let totalEstimatedPages = 0;
-    let totalAnalyses = 0;
-    let completedAnalyses = 0;
-    let draftingAnalyses = 0;
-
     let maviDepodaGuncel = 0;
     let maviDepoyaGidebilir = 0;
     let raporOkunduEA = 0;
@@ -377,8 +717,27 @@ export default function App() {
     let nmYazildiKontrolBekliyor = 0;
     let nmYaziliyor = 0;
 
+    let sumProgress = 0;
+    let totalEstimatedPages = 0;
+    let totalAnalyses = 0;
+    let completedAnalyses = 0;
+    let draftingAnalyses = 0;
+
     chapters.forEach(ch => {
-      const defaultItems = ch.items || [];
+      const defaultItems = (ch.items || []).map(s => {
+        const override = sectionOverrides[s.id];
+        if (override?.deleted) return null;
+        return {
+          ...s,
+          title: override?.title || s.title,
+          code: override?.code || s.code,
+          defaultPages: override?.defaultPages || s.defaultPages,
+          icerikOzeti: override?.scope !== undefined ? override.scope : s.icerikOzeti,
+          sartnameUyum: override?.sartnameUyum !== undefined ? override.sartnameUyum : s.sartnameUyum,
+          analizler: override?.analizler !== undefined ? override.analizler : s.analizler
+        };
+      }).filter(Boolean) as ReportItem[];
+
       const customs = customItems[ch.num] || [];
       
       const allItems: ReportItem[] = [
@@ -394,7 +753,8 @@ export default function App() {
           title: c.title,
           sartnameUyum: c.sartnameUyum,
           icerikOzeti: c.scope,
-          defaultPages: c.defaultPages || '8-10 sf'
+          defaultPages: c.defaultPages || '8-10 sf',
+          analizler: c.analizler || []
         }))
       ];
 
@@ -448,39 +808,28 @@ export default function App() {
             status: auto.status,
             progress: auto.progress
           };
-        } else {
-          const status = item.defaultStatus || 'baslanmadi';
-          return {
-            status,
-            progress: STATUS_PROGRESS_MAP[status] ?? 0
-          };
         }
+        const st = item.defaultStatus || 'baslanmadi';
+        return {
+          status: st,
+          progress: STATUS_PROGRESS_MAP[st] ?? 0
+        };
       };
 
       allItems.forEach(item => {
         total++;
         const id = getItemId(item);
-        const rawStatus = reportStatus[id];
+        const itemState = reportStatus[id] || { author: '', targetPages: item.defaultPages || '', note: '', driveLink: '' };
         
-        const computed = getItemStatusAndProgress(item);
-        const itemStatusType = computed.status;
-        const itemProgress = computed.progress;
+        const { status: itemStatusType, progress: itemProgress } = getItemStatusAndProgress(item);
 
-        const itemState = rawStatus || {
-          status: itemStatusType,
-          progress: itemProgress,
-          author: '',
-          targetPages: item.defaultPages || ''
-        };
-
-        // Classify statuses
         if (itemStatusType === 'mavi_depoda_guncel' || itemStatusType === 'completed') {
           maviDepodaGuncel++;
         } else if (itemStatusType === 'mavi_depoya_gidebilir') {
           maviDepoyaGidebilir++;
         } else if (itemStatusType === 'rapor_okundu_ea') {
           raporOkunduEA++;
-        } else if (itemStatusType === 'rapor_okundu_sidar' || itemStatusType === 'review') {
+        } else if (itemStatusType === 'rapor_okundu_sidar') {
           raporOkunduSidar++;
         } else if (itemStatusType === 'rapora_yazildi') {
           raporaYazildi++;
@@ -547,11 +896,11 @@ export default function App() {
 
   const mevcutStats = useMemo(() => {
     return calculateStatsForChapters(KONUT_BARINMA_CHAPTERS);
-  }, [reportStatus, analysisStatuses, customItems, distinctAuthors]);
+  }, [reportStatus, analysisStatuses, customItems, sectionOverrides, distinctAuthors]);
 
   const politikaStats = useMemo(() => {
     return calculateStatsForChapters(POLITIKA_YATIRIM_CHAPTERS);
-  }, [reportStatus, analysisStatuses, customItems, distinctAuthors]);
+  }, [reportStatus, analysisStatuses, customItems, sectionOverrides, distinctAuthors]);
 
   const overallStats = activeTab === 'mevcut_durum' ? mevcutStats : politikaStats;
 
@@ -562,7 +911,21 @@ export default function App() {
         return null;
       }
 
-      const defaultItems = (ch.items || []).map(s => ({ ...s, isCustom: false }));
+      const defaultItems = (ch.items || []).map(s => {
+        const override = sectionOverrides[s.id];
+        if (override?.deleted) return null;
+        return {
+          ...s,
+          title: override?.title || s.title,
+          code: override?.code || s.code,
+          defaultPages: override?.defaultPages || s.defaultPages,
+          icerikOzeti: override?.scope !== undefined ? override.scope : s.icerikOzeti,
+          sartnameUyum: override?.sartnameUyum !== undefined ? override.sartnameUyum : s.sartnameUyum,
+          analizler: override?.analizler !== undefined ? override.analizler : s.analizler,
+          isCustom: false
+        };
+      }).filter(Boolean) as (ReportItem & { isCustom?: boolean; customId?: string })[];
+
       const customs = (customItems[ch.num] || []).map(s => ({
         id: `custom_${s.id}`,
         level1: `${ch.num}. ${ch.title}`,
@@ -575,6 +938,7 @@ export default function App() {
         sartnameUyum: s.sartnameUyum,
         icerikOzeti: s.scope,
         defaultPages: s.defaultPages || '8-10 sf',
+        analizler: s.analizler || [],
         isCustom: true,
         customId: s.id
       }));
@@ -653,7 +1017,7 @@ export default function App() {
         items: allItems
       };
     }).filter(Boolean) as { chapter: ReportChapterGroup; items: (ReportItem & { isCustom?: boolean; customId?: string })[] }[];
-  }, [activeTab, currentChapters, selectedChapterFilter, customItems, searchTerm, statusFilter, authorFilter, analysisFilter, reportStatus, analysisStatuses]);
+  }, [activeTab, currentChapters, selectedChapterFilter, customItems, sectionOverrides, searchTerm, statusFilter, authorFilter, analysisFilter, reportStatus, analysisStatuses]);
 
   return (
     <div className="portal-container" id="konut-portal-app">
@@ -673,7 +1037,6 @@ export default function App() {
 
         {/* Top Right Action Menu */}
         <div className="toolbar-right-actions">
-          {/* Geri Sayım Sayacı (Haftasonları Dahil) */}
           <HeaderCountdown />
 
           <button 
@@ -706,8 +1069,6 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="portal-main-content">
-
-
         {/* Executive Stats Bar */}
         <ReportStats stats={overallStats} />
 
@@ -816,8 +1177,6 @@ export default function App() {
           </div>
         </div>
 
-
-
         {/* Chapters Cards List */}
         <div className="chapters-container">
           {filteredChapters.length === 0 ? (
@@ -852,7 +1211,11 @@ export default function App() {
                 onUpdateStatus={handleUpdateStatus}
                 onUpdateAnalysisStatus={handleUpdateAnalysisStatus}
                 onAddSubSection={handleAddSubSection}
+                onEditSubSection={handleEditSubSection}
                 onDeleteSubSection={handleDeleteSubSection}
+                onAddAnalysis={handleAddAnalysis}
+                onEditAnalysis={handleEditAnalysis}
+                onDeleteAnalysis={handleDeleteAnalysis}
                 onUpdateChapterNotes={handleUpdateChapterNotes}
               />
             ))

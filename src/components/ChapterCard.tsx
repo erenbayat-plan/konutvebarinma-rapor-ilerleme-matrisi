@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import type { ReportChapterGroup, ReportItem, ReportStatusType } from '../reportData';
+import { Pencil, Plus, X, Layers, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import type { ReportChapterGroup, ReportItem, ReportStatusType, AnalysisItem } from '../reportData';
 import { 
-  REPORT_STATUS_LABEL, 
   STATUS_PROGRESS_MAP, 
   computeAutoStatusForAnalyses,
   SPATIAL_STATUS_KEYS,
@@ -9,6 +9,9 @@ import {
   getStatusLabel
 } from '../reportData';
 import type { ReportStatusItem } from '../syncService';
+import { HeadingModal, HeadingFormData } from './HeadingModal';
+import { AnalysisModal } from './AnalysisModal';
+import { ConfirmModal } from './ConfirmModal';
 
 interface ChapterCardProps {
   chapter: ReportChapterGroup;
@@ -20,18 +23,32 @@ interface ChapterCardProps {
   onToggleCollapse: (chapterNum: string) => void;
   onUpdateStatus: (id: string, updates: Partial<ReportStatusItem>) => void;
   onUpdateAnalysisStatus: (analysisId: string, status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede') => void;
-  onAddSubSection?: (
+  onAddSubSection: (
     chapterNum: string, 
-    title: string, 
-    code: string, 
-    scope?: string, 
-    pages?: string, 
-    level2?: string,
-    level3?: string,
-    level4?: string,
-    sartnameUyum?: string
+    formData: HeadingFormData, 
+    degree: 3 | 4, 
+    parentCode?: string
   ) => void;
-  onDeleteSubSection: (id: string, customId?: string) => void;
+  onEditSubSection: (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    updates: HeadingFormData
+  ) => void;
+  onDeleteSubSection: (
+    item: ReportItem & { customId?: string; isCustom?: boolean }
+  ) => void;
+  onAddAnalysis: (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    data: { name: string; category?: string; status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede' }
+  ) => void;
+  onEditAnalysis: (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    analysisId: string,
+    updates: { name: string; category?: string; status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede' }
+  ) => void;
+  onDeleteAnalysis: (
+    item: ReportItem & { customId?: string; isCustom?: boolean },
+    analysisId: string
+  ) => void;
   onUpdateChapterNotes: (chapterNum: string, note: string) => void;
 }
 
@@ -45,7 +62,12 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   onToggleCollapse,
   onUpdateStatus,
   onUpdateAnalysisStatus,
+  onAddSubSection,
+  onEditSubSection,
   onDeleteSubSection,
+  onAddAnalysis,
+  onEditAnalysis,
+  onDeleteAnalysis,
   onUpdateChapterNotes
 }) => {
   const [showChapterNote, setShowChapterNote] = useState(false);
@@ -54,7 +76,50 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   // Collapsed 2nd-level sub-groups (e.g. "3.1", "3.2", "4.1")
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
+  // Modals state
+  const [headingModalState, setHeadingModalState] = useState<{
+    isOpen: boolean;
+    mode: 'add' | 'edit';
+    degree: 3 | 4;
+    parentCode?: string;
+    parentTitle?: string;
+    targetItem?: ReportItem & { customId?: string; isCustom?: boolean };
+  }>({
+    isOpen: false,
+    mode: 'add',
+    degree: 3
+  });
+
+  const [analysisModalState, setAnalysisModalState] = useState<{
+    isOpen: boolean;
+    mode: 'add' | 'edit';
+    targetItem?: ReportItem & { customId?: string; isCustom?: boolean };
+    targetAnalysis?: AnalysisItem;
+  }>({
+    isOpen: false,
+    mode: 'add'
+  });
+
+  const [confirmModalState, setConfirmModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'primary';
+    confirmLabel?: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    variant: 'danger',
+    onConfirm: () => {}
+  });
+
   const getItemId = (item: ReportItem) => item.id || `konut_${item.code.replace(/\./g, '_')}`;
+
+  const getHeadingDegree = (code: string): number => {
+    return code.split('.').filter(Boolean).length;
+  };
 
   const getStatus = (item: ReportItem): ReportStatusItem => {
     const children = items.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
@@ -201,6 +266,81 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
     setCollapsedGroups(prev => ({ ...prev, [groupCode]: !prev[groupCode] }));
   };
 
+  // --- Handlers for Headings Actions ---
+  const handleOpenAddHeading = (degree: 3 | 4, parentCode: string, parentTitle: string) => {
+    setHeadingModalState({
+      isOpen: true,
+      mode: 'add',
+      degree,
+      parentCode,
+      parentTitle
+    });
+  };
+
+  const handleOpenEditHeading = (item: ReportItem & { customId?: string; isCustom?: boolean }) => {
+    const degree = getHeadingDegree(item.code) as 3 | 4;
+    // Extract parent info
+    const parts = item.code.split('.');
+    const parentCode = parts.slice(0, -1).join('.');
+    setHeadingModalState({
+      isOpen: true,
+      mode: 'edit',
+      degree: (degree === 4 ? 4 : 3),
+      parentCode,
+      parentTitle: item.level2 || item.level3 || '',
+      targetItem: item
+    });
+  };
+
+  const handleOpenDeleteHeading = (item: ReportItem & { customId?: string; isCustom?: boolean }) => {
+    const degree = getHeadingDegree(item.code);
+    setConfirmModalState({
+      isOpen: true,
+      title: `${degree}. Derece Başlığı Silmek İstiyor musunuz?`,
+      message: `"${item.code} ${item.title}" başlıklı bölüm ve altındaki tüm analizler kaldırılacaktır. Bu işlem geri alınamaz.`,
+      variant: 'danger',
+      confirmLabel: 'Evet, Sil',
+      onConfirm: () => {
+        setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+        onDeleteSubSection(item);
+      }
+    });
+  };
+
+  // --- Handlers for Spatial Analysis Actions ---
+  const handleOpenAddAnalysis = (item: ReportItem & { customId?: string; isCustom?: boolean }) => {
+    setAnalysisModalState({
+      isOpen: true,
+      mode: 'add',
+      targetItem: item
+    });
+  };
+
+  const handleOpenEditAnalysis = (item: ReportItem & { customId?: string; isCustom?: boolean }, an: AnalysisItem) => {
+    setAnalysisModalState({
+      isOpen: true,
+      mode: 'edit',
+      targetItem: item,
+      targetAnalysis: an
+    });
+  };
+
+  const handleOpenDeleteAnalysis = (item: ReportItem & { customId?: string; isCustom?: boolean }, an: AnalysisItem) => {
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Mekânsal Analizi Silmek İstiyor musunuz?',
+      message: `"${an.name}" analizi "${item.code} ${item.title}" başlığı altından kaldırılacaktır.`,
+      variant: 'danger',
+      confirmLabel: 'Evet, Sil',
+      onConfirm: () => {
+        setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+        onDeleteAnalysis(item, an.id);
+      }
+    });
+  };
+
+  const allItemCodes = useMemo(() => items.map(i => i.code), [items]);
+
   return (
     <div className={`chapter-card ${isCollapsed ? 'collapsed' : ''}`} id={`chapter-${chapter.num}`}>
       {/* Chapter Head */}
@@ -290,6 +430,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                   <th style={{ width: '230px' }}>Rapor Durumu</th>
                   <th style={{ width: '130px' }}>İlerleme</th>
                   <th style={{ width: '170px' }}>Sorumlu Yazar</th>
+                  <th style={{ width: '80px', textAlign: 'right' }}>İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -319,14 +460,14 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
 
                   return (
                     <React.Fragment key={`group_${group.groupCode}`}>
-                      {/* 2. Düzey Başlık Çubuğu (Örn: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2 vb.) - Tıklanabilir & Katlanabilir */}
+                      {/* 2. Düzey Başlık Çubuğu (Örn: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2 vb.) */}
                       {group.isParentGroup && (
                         <tr 
                           className={`section-group-header-row ${isGroupCollapsed ? 'is-collapsed' : 'is-expanded'}`}
                           onClick={() => toggleGroupCollapse(group.groupCode)}
                           title={`${group.groupTitle} alt başlıklarını ${isGroupCollapsed ? 'genişletmek' : 'daraltmak'} için tıklayın`}
                         >
-                          <td colSpan={5} className="section-group-header-cell">
+                          <td colSpan={6} className="section-group-header-cell">
                             <div className="sgh-content">
                               <div className="sgh-left">
                                 <span className="sgh-code-badge">{group.groupCode}</span>
@@ -336,7 +477,19 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                   {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} Mekânsal Analiz` : ''}
                                 </span>
                               </div>
-                              <div className="sgh-right">
+                              <div className="sgh-right" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="btn-add-sub-minimal"
+                                  title={`${group.groupCode} altına 3. Düzey yeni başlık ekle`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenAddHeading(3, group.groupCode, group.groupTitle);
+                                  }}
+                                >
+                                  <Plus size={12} />
+                                  <span>Alt Başlık Ekle</span>
+                                </button>
                                 <div className="sgh-progress-wrap">
                                   <span className="sgh-prog-text">{groupCompletedCount}/{group.items.length} Tamamlandı</span>
                                   <div className="sgh-mini-track">
@@ -348,7 +501,13 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                     />
                                   </div>
                                 </div>
-                                <span className="sgh-collapse-hint">
+                                <span 
+                                  className="sgh-collapse-hint"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleGroupCollapse(group.groupCode);
+                                  }}
+                                >
                                   {isGroupCollapsed ? 'Genişlet' : 'Daralt'}
                                 </span>
                               </div>
@@ -357,7 +516,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         </tr>
                       )}
 
-                      {/* 3. Düzey Alt Başlık Satırları (Örn: 3.1.1, 3.1.2) veya Bağımsız 2. Düzey Satırları (1.1, 3.6 vb.) - Grup açıkken gösterilir */}
+                      {/* Alt Başlık Satırları (3. ve 4. Düzey veya Bağımsız 2. Düzey) */}
                       {(!group.isParentGroup || !isGroupCollapsed) && group.items.map((item, idx) => {
                         const id = getItemId(item);
                         const st = getStatus(item);
@@ -367,6 +526,10 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         const analysesDoneCount = analyses.filter(a => (analysisStatuses[a.id] || a.status) === 'Tamamlandı').length;
                         const hasChildren = group.items.some(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
                         
+                        // Degree Calculation: Only 3rd and 4th degree headings can be edited, deleted, or added
+                        const degree = getHeadingDegree(item.code);
+                        const is3rdOr4thDegree = degree === 3 || degree === 4;
+
                         // Find parent code, e.g. '3.2.1' for '3.2.1.1'
                         const parts = item.code.split('.');
                         let isHiddenByParent = false;
@@ -379,7 +542,6 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         }
                         
                         if (isHiddenByParent) return null;
-
 
                         return (
                           <React.Fragment key={item.id || item.code || idx}>
@@ -398,7 +560,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                             >
                               {/* Kod */}
                               <td className="sec-code" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <div style={{ width: `${(parts.length - 2) * 24}px`, flexShrink: 0 }} />
+                                <div style={{ width: `${Math.max(0, (parts.length - 2)) * 20}px`, flexShrink: 0 }} />
                                 <div style={{ width: '20px', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                                   {hasChildren && (
                                     <button
@@ -436,7 +598,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 <div className="sub-title-main">
                                   <span className="sub-title-text">{item.title}</span>
                                   {item.isCustom && (
-                                    <span className="custom-tag">Eklenen</span>
+                                    <span className="custom-tag">Özel</span>
                                   )}
                                   {analyses.length > 0 && (
                                     <span
@@ -444,21 +606,6 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                     >
                                       {analysesDoneCount}/{analyses.length} Analiz {isDetailOpen ? '▲' : '▼'}
                                     </span>
-                                  )}
-                                  {item.isCustom && (
-                                    <button
-                                      type="button"
-                                      className="action-btn delete-btn"
-                                      title="Bu başlığı sil"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (window.confirm(`"${item.title}" başlığı silinsin mi?`)) {
-                                          onDeleteSubSection(id, item.customId);
-                                        }
-                                      }}
-                                    >
-                                      Sil
-                                    </button>
                                   )}
                                 </div>
                               </td>
@@ -492,7 +639,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 )}
                               </td>
 
-                              {/* İlerleme Sütunu (Otomatik Yüzde & İlerleme Çubuğu) */}
+                              {/* İlerleme Sütunu */}
                               <td>
                                 <div className="progress-display-cell">
                                   <div className="pdc-bar-wrap">
@@ -525,54 +672,148 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                   />
                                 </div>
                               </td>
+
+                              {/* İşlem Sütunu: Sadece 3. ve 4. Derece Başlıklar İçin Minimal Butonlar */}
+                              <td className="row-actions-cell">
+                                {is3rdOr4thDegree ? (
+                                  <div className="row-actions-group" onClick={e => e.stopPropagation()}>
+                                    {/* 4. Düzey Alt Başlık Ekleme Butonu (Sadece 3. Derece Başlıklarda) */}
+                                    {degree === 3 && (
+                                      <button
+                                        type="button"
+                                        className="action-symbol-btn add-symbol-btn"
+                                        title={`${item.code} altına 4. Düzey alt başlık ekle`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenAddHeading(4, item.code, item.title);
+                                        }}
+                                      >
+                                        <Plus size={13} />
+                                      </button>
+                                    )}
+
+                                    {/* Düzenleme Butonu (Minimal Sembol) */}
+                                    <button
+                                      type="button"
+                                      className="action-symbol-btn edit-symbol-btn"
+                                      title="Başlığı Düzenle"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenEditHeading(item);
+                                      }}
+                                    >
+                                      <Pencil size={13} />
+                                    </button>
+
+                                    {/* Kaldırma Butonu: En sağda yuvarlak içinde x */}
+                                    <button
+                                      type="button"
+                                      className="action-symbol-btn delete-circle-btn"
+                                      title="Başlığı Kaldır"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenDeleteHeading(item);
+                                      }}
+                                    >
+                                      <X size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span style={{ display: 'inline-block', width: '24px' }} />
+                                )}
+                              </td>
                             </tr>
 
-                            {/* Expanded Detail Drawer (Tıklandığında SADECE Analizler Gösterilir) */}
-                            {isDetailOpen && analyses.length > 0 && (
+                            {/* Expanded Detail Drawer: Mekânsal ve CBS Analizleri */}
+                            {isDetailOpen && (
                               <tr className="note-expanded-row">
-                                <td colSpan={5}>
+                                <td colSpan={6}>
                                   <div className="detail-expanded-panel compact-analyses-panel">
-                                    {/* Top Bar with metadata */}
+                                    {/* Top Bar with metadata & Add Analysis Button */}
                                     <div className="dep-top-bar">
                                       <div className="dep-top-left">
                                         <span className="dep-code-pill">{item.code}</span>
                                         <h4 className="dep-item-title">{item.title} — Mekânsal ve CBS Analizleri</h4>
                                       </div>
                                       <div className="dep-top-right">
+                                        <button
+                                          type="button"
+                                          className="btn-add-analysis-minimal"
+                                          title="Bu başlık altına yeni mekânsal analiz ekle"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenAddAnalysis(item);
+                                          }}
+                                        >
+                                          <Plus size={12} />
+                                          <span>Analiz Ekle</span>
+                                        </button>
                                         <span className="dep-analyses-count-pill">
                                           {analysesDoneCount} / {analyses.length} Tamamlandı
                                         </span>
                                       </div>
                                     </div>
 
-                                    {/* Sadece Mekânsal ve CBS Analizleri Izgarası */}
+                                    {/* Mekânsal ve CBS Analizleri Izgarası */}
                                     <div className="dep-analyses-grid-compact">
-                                      {analyses.map(an => {
-                                        const currentStatus = analysisStatuses[an.id] || an.status;
-                                        return (
-                                          <div 
-                                            key={an.id} 
-                                            className={`dep-analysis-card status-${currentStatus}`}
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const nextSt = 
-                                                currentStatus === 'Tamamlandı' ? 'Devam Ediyor' :
-                                                currentStatus === 'Devam Ediyor' ? 'Başlamadı' :
-                                                currentStatus === 'Başlamadı' ? 'Tamamlandı' : 'Tamamlandı';
-                                              onUpdateAnalysisStatus(an.id, nextSt);
-                                            }}
-                                            title="Durumu değiştirmek için tıklayın (Tamamlandı / Devam Ediyor / Başlamadı)"
-                                          >
-                                            <div className="dac-head">
-                                              <span className="dac-name">{an.name}</span>
-                                              <span className={`dac-badge st-${currentStatus}`}>{currentStatus}</span>
+                                      {analyses.length === 0 ? (
+                                        <div style={{ padding: '12px', color: 'var(--muted)', fontSize: '12px' }}>
+                                          Bu başlık altında henüz kayıtlı mekânsal analiz bulunmuyor. Yeni analiz eklemek için yukarıdaki "Analiz Ekle" butonunu kullanabilirsiniz.
+                                        </div>
+                                      ) : (
+                                        analyses.map(an => {
+                                          const currentStatus = analysisStatuses[an.id] || an.status;
+                                          return (
+                                            <div 
+                                              key={an.id} 
+                                              className={`dep-analysis-card status-${currentStatus}`}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const nextSt = 
+                                                  currentStatus === 'Tamamlandı' ? 'Devam Ediyor' :
+                                                  currentStatus === 'Devam Ediyor' ? 'Başlamadı' :
+                                                  currentStatus === 'Başlamadı' ? 'Tamamlandı' : 'Tamamlandı';
+                                                onUpdateAnalysisStatus(an.id, nextSt);
+                                              }}
+                                              title="Durumu değiştirmek için tıklayın (Tamamlandı / Devam Ediyor / Başlamadı)"
+                                            >
+                                              <div className="dac-head">
+                                                <span className="dac-name">{an.name}</span>
+                                                <div className="dac-actions-wrap" onClick={e => e.stopPropagation()}>
+                                                  {/* Düzenleme Butonu */}
+                                                  <button
+                                                    type="button"
+                                                    className="an-action-btn edit-an-btn"
+                                                    title="Analizi Düzenle"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleOpenEditAnalysis(item, an);
+                                                    }}
+                                                  >
+                                                    <Pencil size={11} />
+                                                  </button>
+                                                  {/* Kaldırma Butonu: Yuvarlak içinde X */}
+                                                  <button
+                                                    type="button"
+                                                    className="an-action-btn delete-an-circle-btn"
+                                                    title="Analizi Kaldır"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleOpenDeleteAnalysis(item, an);
+                                                    }}
+                                                  >
+                                                    <X size={11} />
+                                                  </button>
+                                                  <span className={`dac-badge st-${currentStatus}`}>{currentStatus}</span>
+                                                </div>
+                                              </div>
+                                              {an.category && (
+                                                <span className="dac-category">{an.category}</span>
+                                              )}
                                             </div>
-                                            {an.category && (
-                                              <span className="dac-category">{an.category}</span>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
+                                          );
+                                        })
+                                      )}
                                     </div>
                                   </div>
                                 </td>
@@ -589,6 +830,72 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Heading Add / Edit Modal */}
+      <HeadingModal
+        isOpen={headingModalState.isOpen}
+        mode={headingModalState.mode}
+        degree={headingModalState.degree}
+        parentCode={headingModalState.parentCode}
+        parentTitle={headingModalState.parentTitle}
+        initialData={
+          headingModalState.targetItem
+            ? {
+                code: headingModalState.targetItem.code,
+                title: headingModalState.targetItem.title,
+                defaultPages: headingModalState.targetItem.defaultPages,
+                icerikOzeti: headingModalState.targetItem.icerikOzeti,
+                sartnameUyum: headingModalState.targetItem.sartnameUyum
+              }
+            : undefined
+        }
+        existingCodes={allItemCodes}
+        onClose={() => setHeadingModalState(prev => ({ ...prev, isOpen: false }))}
+        onSubmit={(formData) => {
+          if (headingModalState.mode === 'add') {
+            onAddSubSection(chapter.num, formData, headingModalState.degree, headingModalState.parentCode);
+          } else if (headingModalState.targetItem) {
+            onEditSubSection(headingModalState.targetItem, formData);
+          }
+        }}
+      />
+
+      {/* Analysis Add / Edit Modal */}
+      <AnalysisModal
+        isOpen={analysisModalState.isOpen}
+        mode={analysisModalState.mode}
+        itemCode={analysisModalState.targetItem?.code}
+        itemTitle={analysisModalState.targetItem?.title}
+        initialData={
+          analysisModalState.targetAnalysis
+            ? {
+                name: analysisModalState.targetAnalysis.name,
+                category: analysisModalState.targetAnalysis.category,
+                status: (analysisStatuses[analysisModalState.targetAnalysis.id] || analysisModalState.targetAnalysis.status)
+              }
+            : undefined
+        }
+        onClose={() => setAnalysisModalState(prev => ({ ...prev, isOpen: false }))}
+        onSubmit={(analysisData) => {
+          if (!analysisModalState.targetItem) return;
+          if (analysisModalState.mode === 'add') {
+            onAddAnalysis(analysisModalState.targetItem, analysisData);
+          } else if (analysisModalState.targetAnalysis) {
+            onEditAnalysis(analysisModalState.targetItem, analysisModalState.targetAnalysis.id, analysisData);
+          }
+        }}
+      />
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+        variant={confirmModalState.variant}
+        confirmLabel={confirmModalState.confirmLabel || 'Onayla'}
+        onConfirm={confirmModalState.onConfirm}
+        onCancel={() => setConfirmModalState(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

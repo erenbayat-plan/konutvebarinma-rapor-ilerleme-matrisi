@@ -9,7 +9,7 @@ import {
   Firestore
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-import type { ReportStatusType } from './reportData';
+import type { ReportStatusType, AnalysisItem } from './reportData';
 
 export type ReportStatusItem = {
   status: ReportStatusType;
@@ -31,12 +31,23 @@ export type CustomSubSection = {
   sartnameUyum?: string;
   scope?: string;
   defaultPages?: string;
+  analizler?: AnalysisItem[];
+};
+
+export type SectionOverride = {
+  title?: string;
+  code?: string;
+  scope?: string;
+  defaultPages?: string;
+  deleted?: boolean;
+  sartnameUyum?: string;
+  analizler?: AnalysisItem[];
 };
 
 export type AppState = {
   reportStatus?: Record<string, ReportStatusItem>;
   customSubSections?: Record<string, CustomSubSection[]>; // keyed by chapterNum
-  sectionOverrides?: Record<string, { title?: string; code?: string; scope?: string; defaultPages?: string; deleted?: boolean }>;
+  sectionOverrides?: Record<string, SectionOverride>;
   analysisStatuses?: Record<string, 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede'>;
   chapterNotes?: Record<string, string>;
   lastUpdated?: number;
