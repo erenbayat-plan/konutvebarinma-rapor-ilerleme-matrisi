@@ -1,0 +1,6 @@
+{
+  "name": "İstanbul 2050 Konut ve Barınma Rapor Çatkısı",
+  "description": "İstanbul 2050 Çevre Düzeni Planı Konut ve Barınma Grubu Rapor Çatkısı, Yazım ve İlerleme Takip Portalı",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

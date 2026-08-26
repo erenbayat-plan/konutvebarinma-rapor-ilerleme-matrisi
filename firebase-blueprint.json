@@ -1,0 +1,13 @@
+{
+  "collections": {
+    "app_state": {
+      "__description__": "Shared state for the console",
+      "__schema__": {
+        "workStatus": "map",
+        "customRows": "map",
+        "rowOverrides": "map",
+        "analizOverrides": "map"
+      }
+    }
+  }
+}
