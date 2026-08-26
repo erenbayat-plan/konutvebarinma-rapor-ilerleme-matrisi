@@ -4,8 +4,11 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  onSnapshot 
+  onSnapshot,
+  getDocFromServer,
+  Firestore
 } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
 import type { ReportStatusType } from './reportData';
 
 export type ReportStatusItem = {
@@ -39,6 +42,31 @@ export type AppState = {
   lastUpdated?: number;
 };
 
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return errInfo;
+}
+
 // Broadcast channel for instantaneous cross-tab synchronization
 const BROADCAST_CHANNEL_NAME = 'plan2050_konut_barinma_sync';
 let broadcastChannel: BroadcastChannel | null = null;
@@ -51,27 +79,40 @@ try {
 }
 
 // Firebase configuration
-let db: any = null;
+let dbInstance: Firestore | null = null;
 const DOC_ID = 'konut_barinma_state';
 const COLLECTION_NAME = 'app_state';
 
-function getFirebaseDb() {
-  if (db) return db;
+export function getFirebaseDb(): Firestore | null {
+  if (dbInstance) return dbInstance;
   try {
-    const config = {
-      projectId: "gen-lang-client-0064652018",
-      authDomain: "gen-lang-client-0064652018.firebaseapp.com",
-      storageBucket: "gen-lang-client-0064652018.firebasestorage.app"
-    };
-
-    const app = getApps().length === 0 ? initializeApp(config) : getApp();
-    db = getFirestore(app);
-    return db;
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    dbInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    return dbInstance;
   } catch (err) {
-    console.warn('Firestore initialization failed; falling back to local sync:', err);
+    handleFirestoreError(err, OperationType.GET, 'init');
     return null;
   }
 }
+
+// Test connection on boot
+export async function testConnection(): Promise<boolean> {
+  const firestore = getFirebaseDb();
+  if (!firestore) return false;
+  try {
+    await getDocFromServer(doc(firestore, COLLECTION_NAME, DOC_ID));
+    return true;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+    handleFirestoreError(error, OperationType.GET, `${COLLECTION_NAME}/${DOC_ID}`);
+    return false;
+  }
+}
+
+// Boot-time test call
+testConnection();
 
 export function subscribeToTabBroadcast(onUpdate: (state: AppState) => void): () => void {
   if (!broadcastChannel) return () => {};
@@ -106,6 +147,7 @@ export function subscribeToCloudState(
     return () => {};
   }
 
+  const docPath = `${COLLECTION_NAME}/${DOC_ID}`;
   try {
     const docRef = doc(firestore, COLLECTION_NAME, DOC_ID);
     const unsubscribe = onSnapshot(docRef, (snapshot) => {
@@ -115,13 +157,13 @@ export function subscribeToCloudState(
       }
       if (onConnected) onConnected();
     }, (error) => {
-      console.warn('Firestore real-time listener error:', error);
+      handleFirestoreError(error, OperationType.GET, docPath);
       if (onConnected) onConnected();
     });
 
     return unsubscribe;
   } catch (e) {
-    console.warn('subscribeToCloudState failed:', e);
+    handleFirestoreError(e, OperationType.GET, docPath);
     if (onConnected) onConnected();
     return () => {};
   }
@@ -131,6 +173,7 @@ export async function fetchGlobalCloudState(): Promise<AppState | null> {
   const firestore = getFirebaseDb();
   if (!firestore) return null;
 
+  const docPath = `${COLLECTION_NAME}/${DOC_ID}`;
   try {
     const docRef = doc(firestore, COLLECTION_NAME, DOC_ID);
     const snap = await getDoc(docRef);
@@ -139,7 +182,7 @@ export async function fetchGlobalCloudState(): Promise<AppState | null> {
     }
     return null;
   } catch (e) {
-    console.warn('fetchGlobalCloudState error:', e);
+    handleFirestoreError(e, OperationType.GET, docPath);
     return null;
   }
 }
@@ -151,12 +194,13 @@ export async function pushGlobalCloudState(state: AppState): Promise<boolean> {
   const firestore = getFirebaseDb();
   if (!firestore) return true;
 
+  const docPath = `${COLLECTION_NAME}/${DOC_ID}`;
   try {
     const docRef = doc(firestore, COLLECTION_NAME, DOC_ID);
     await setDoc(docRef, state, { merge: true });
     return true;
   } catch (e) {
-    console.warn('pushGlobalCloudState error:', e);
+    handleFirestoreError(e, OperationType.WRITE, docPath);
     return false;
   }
 }

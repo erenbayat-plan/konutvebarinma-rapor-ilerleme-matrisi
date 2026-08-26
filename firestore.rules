@@ -1,8 +1,29 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /app_state/{document} {
-      allow read, write: if true;
+    // Global safety net - default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidAppState(data) {
+      return data is map &&
+        (!('lastUpdated' in data) || data.lastUpdated is number) &&
+        (!('reportStatus' in data) || data.reportStatus is map) &&
+        (!('customSubSections' in data) || data.customSubSections is map) &&
+        (!('sectionOverrides' in data) || data.sectionOverrides is map) &&
+        (!('analysisStatuses' in data) || data.analysisStatuses is map) &&
+        (!('chapterNotes' in data) || data.chapterNotes is map);
+    }
+
+    match /app_state/{stateId} {
+      allow get, list: if isValidId(stateId);
+      allow create, update: if isValidId(stateId) && isValidAppState(request.resource.data);
+      allow delete: if false;
     }
   }
 }

@@ -1,13 +1,41 @@
 {
-  "collections": {
-    "app_state": {
-      "__description__": "Shared state for the console",
-      "__schema__": {
-        "workStatus": "map",
-        "customRows": "map",
-        "rowOverrides": "map",
-        "analizOverrides": "map"
+  "entities": {
+    "AppState": {
+      "title": "AppState",
+      "description": "Global collaborative report tracking state for Istanbul Plan 2050 Konut ve Barınma Rapor Çatkısı",
+      "type": "object",
+      "properties": {
+        "reportStatus": {
+          "type": "object",
+          "description": "Map of chapter subsection statuses, author assignments, and progress percentages"
+        },
+        "customSubSections": {
+          "type": "object",
+          "description": "Custom subsections added by editors per chapter"
+        },
+        "sectionOverrides": {
+          "type": "object",
+          "description": "Title, scope, or target page overrides"
+        },
+        "analysisStatuses": {
+          "type": "object",
+          "description": "Status of spatial and GIS analyses"
+        },
+        "chapterNotes": {
+          "type": "object",
+          "description": "General coordination and methodology notes per chapter"
+        },
+        "lastUpdated": {
+          "type": "number",
+          "description": "Timestamp of last modification"
+        }
       }
+    }
+  },
+  "firestore": {
+    "/app_state/{stateId}": {
+      "schema": "AppState",
+      "description": "Synchronized report and spatial analysis state document"
     }
   }
 }
