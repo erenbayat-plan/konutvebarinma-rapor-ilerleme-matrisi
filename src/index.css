@@ -1652,3 +1652,96 @@ button, select, input, textarea {
     padding: 8px;
   }
 }
+
+
+/* Tab Navigation Redesign */
+.portal-tabs-bar {
+  display: flex;
+  gap: 16px;
+  padding: 0 48px;
+  background: #0F172A; /* Match header dark theme */
+  border-bottom: 1px solid #1E293B;
+  flex-wrap: wrap;
+}
+
+.portal-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px;
+  font-size: 18px; /* Larger text */
+  font-weight: 600; /* Bold/prominent */
+  color: #94A3B8; /* Slate gray for inactive tabs */
+  background: transparent;
+  border: none;
+  border-bottom: 4px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-bottom: -1px;
+}
+
+.portal-tab-btn:hover {
+  color: #F8FAFC;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.portal-tab-btn.active.tab-indigo {
+  color: #818CF8; /* Soft bright indigo */
+  border-bottom-color: #6366F1;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.portal-tab-btn.active.tab-amber {
+  color: #FBBF24; /* Soft bright amber */
+  border-bottom-color: #F59E0B;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+/* Progress badges inside tabs */
+.tab-progress-badge {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.tab-progress-badge.indigo-badge {
+  background: #4F46E5;
+  color: #FFFFFF;
+}
+
+.tab-progress-badge.amber-badge {
+  background: #D97706;
+  color: #FFFFFF;
+}
+
+@media (max-width: 1024px) {
+  .portal-tabs-bar {
+    padding: 0 24px;
+  }
+}
+@media (max-width: 768px) {
+  .portal-tabs-bar {
+    padding: 0 16px;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .portal-tab-btn {
+    padding: 14px 16px;
+    font-size: 15px;
+    border-bottom: none;
+    border-left: 4px solid transparent;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .portal-tab-btn.active.tab-indigo {
+    border-left-color: #6366F1;
+  }
+  .portal-tab-btn.active.tab-amber {
+    border-left-color: #F59E0B;
+  }
+}

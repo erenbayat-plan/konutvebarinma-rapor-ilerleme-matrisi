@@ -19,6 +19,9 @@ interface ReportStatsProps {
     analizTamamlandi: number;
     analizDevamEdiyor: number;
     baslanmadi: number;
+    nmKontrolTamamlandi?: number;
+    nmYazildiKontrolBekliyor?: number;
+    nmYaziliyor?: number;
   };
 }
 
@@ -63,13 +66,13 @@ export const ReportStats: React.FC<ReportStatsProps> = ({ stats }) => {
         <div className="sc-sub">%98 Hazır</div>
       </div>
 
-      {/* Kontrolü Tamam (EA / Sidar) */}
+      {/* Kontrolü Tamam (EA / Sidar / Genel) */}
       <div className="stat-card">
         <div className="sc-header">
-          <span className="sc-label">Rapor Okundu</span>
+          <span className="sc-label">Kontrol / Okuma</span>
         </div>
-        <div className="sc-val text-blue-700">{stats.raporOkunduEA + stats.raporOkunduSidar}</div>
-        <div className="sc-sub">EA: {stats.raporOkunduEA} (%95) · Sidar: {stats.raporOkunduSidar} (%85)</div>
+        <div className="sc-val text-blue-700">{stats.raporOkunduEA + stats.raporOkunduSidar + (stats.nmKontrolTamamlandi || 0)}</div>
+        <div className="sc-sub">EA: {stats.raporOkunduEA} · Sidar: {stats.raporOkunduSidar} · Düz: {stats.nmKontrolTamamlandi || 0}</div>
       </div>
 
       {/* Rapora Yazıldı / Yazılabilir */}
@@ -77,8 +80,8 @@ export const ReportStats: React.FC<ReportStatsProps> = ({ stats }) => {
         <div className="sc-header">
           <span className="sc-label">Yazım Aşamasında</span>
         </div>
-        <div className="sc-val text-amber-700">{stats.raporaYazildi + stats.tamamlandiRaporuYazilabilir}</div>
-        <div className="sc-sub">Yazıldı: {stats.raporaYazildi} (%80) · Yazılabilir: {stats.tamamlandiRaporuYazilabilir} (%70)</div>
+        <div className="sc-val text-amber-700">{stats.raporaYazildi + stats.tamamlandiRaporuYazilabilir + (stats.nmYazildiKontrolBekliyor || 0) + (stats.nmYaziliyor || 0)}</div>
+        <div className="sc-sub">Bekleyen: {stats.raporaYazildi + (stats.nmYazildiKontrolBekliyor || 0)} · Yazılan: {stats.tamamlandiRaporuYazilabilir + (stats.nmYaziliyor || 0)}</div>
       </div>
 
       {/* Analiz Süreci */}

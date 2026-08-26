@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   KONUT_BARINMA_CHAPTERS, 
+  POLITIKA_YATIRIM_CHAPTERS,
   REPORT_STATUS_LABEL, 
   REPORT_STATUS_SHORT_LABEL,
   STATUS_PROGRESS_MAP,
   computeAutoStatusForAnalyses,
+  SPATIAL_STATUS_KEYS,
+  NON_SPATIAL_STATUS_KEYS,
+  getStatusLabel,
   ReportStatusType,
   ReportItem, 
   ReportChapterGroup 
@@ -75,7 +79,10 @@ export default function App() {
   const [analysisFilter, setAnalysisFilter] = useState<string>('all');
   const [collapsedChapters, setCollapsedChapters] = useState<Record<string, boolean>>({});
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'mevcut_durum' | 'politika'>('mevcut_durum');
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'connected'>('connected');
+
+  const currentChapters = activeTab === 'mevcut_durum' ? KONUT_BARINMA_CHAPTERS : POLITIKA_YATIRIM_CHAPTERS;
 
   const localVersionRef = useRef(0);
   const isEditingRef = useRef(false);
@@ -192,7 +199,7 @@ export default function App() {
 
     // Find parent report item that contains this analysis
     let parentItem: ReportItem | null = null;
-    for (const ch of KONUT_BARINMA_CHAPTERS) {
+    for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
       for (const it of ch.items) {
         if (it.analizler && it.analizler.some(a => a.id === analysisId)) {
           parentItem = it;
@@ -331,7 +338,7 @@ export default function App() {
 
   const handleCollapseAll = () => {
     const all: Record<string, boolean> = {};
-    KONUT_BARINMA_CHAPTERS.forEach(ch => {
+    currentChapters.forEach(ch => {
       all[ch.num] = true;
     });
     setCollapsedChapters(all);
@@ -348,8 +355,8 @@ export default function App() {
     return Array.from(set).sort();
   }, [reportStatus]);
 
-  // Overall Statistics Calculation
-  const overallStats = useMemo(() => {
+  // Helper to calculate stats for a list of chapters
+  const calculateStatsForChapters = (chapters: typeof KONUT_BARINMA_CHAPTERS) => {
     let total = 0;
     let sumProgress = 0;
     let totalEstimatedPages = 0;
@@ -366,8 +373,11 @@ export default function App() {
     let analizTamamlandi = 0;
     let analizDevamEdiyor = 0;
     let baslanmadi = 0;
+    let nmKontrolTamamlandi = 0;
+    let nmYazildiKontrolBekliyor = 0;
+    let nmYaziliyor = 0;
 
-    KONUT_BARINMA_CHAPTERS.forEach(ch => {
+    chapters.forEach(ch => {
       const defaultItems = ch.items || [];
       const customs = customItems[ch.num] || [];
       
@@ -431,6 +441,12 @@ export default function App() {
           analizTamamlandi++;
         } else if (itemStatusType === 'analiz_devam_ediyor' || itemStatusType === 'drafting') {
           analizDevamEdiyor++;
+        } else if (itemStatusType === 'nm_kontrol_tamamlandi') {
+          nmKontrolTamamlandi++;
+        } else if (itemStatusType === 'nm_yazildi_kontrol_bekliyor') {
+          nmYazildiKontrolBekliyor++;
+        } else if (itemStatusType === 'nm_yaziliyor') {
+          nmYaziliyor++;
         } else {
           baslanmadi++;
         }
@@ -473,13 +489,26 @@ export default function App() {
       tamamlandiRaporuYazilabilir,
       analizTamamlandi,
       analizDevamEdiyor,
-      baslanmadi
+      baslanmadi,
+      nmKontrolTamamlandi,
+      nmYazildiKontrolBekliyor,
+      nmYaziliyor
     };
+  };
+
+  const mevcutStats = useMemo(() => {
+    return calculateStatsForChapters(KONUT_BARINMA_CHAPTERS);
   }, [reportStatus, analysisStatuses, customItems, distinctAuthors]);
+
+  const politikaStats = useMemo(() => {
+    return calculateStatsForChapters(POLITIKA_YATIRIM_CHAPTERS);
+  }, [reportStatus, analysisStatuses, customItems, distinctAuthors]);
+
+  const overallStats = activeTab === 'mevcut_durum' ? mevcutStats : politikaStats;
 
   // Filter Chapters & Items
   const filteredChapters = useMemo(() => {
-    return KONUT_BARINMA_CHAPTERS.map(ch => {
+    return currentChapters.map(ch => {
       if (selectedChapterFilter !== 'all' && ch.num !== selectedChapterFilter) {
         return null;
       }
@@ -575,7 +604,7 @@ export default function App() {
         items: allItems
       };
     }).filter(Boolean) as { chapter: ReportChapterGroup; items: (ReportItem & { isCustom?: boolean; customId?: string })[] }[];
-  }, [selectedChapterFilter, customItems, searchTerm, statusFilter, authorFilter, analysisFilter, reportStatus, analysisStatuses]);
+  }, [activeTab, currentChapters, selectedChapterFilter, customItems, searchTerm, statusFilter, authorFilter, analysisFilter, reportStatus, analysisStatuses]);
 
   return (
     <div className="portal-container" id="konut-portal-app">
@@ -608,9 +637,28 @@ export default function App() {
           </button>
         </div>
       </header>
+      
+      <div className="portal-tabs-bar">
+        <button 
+          className={`portal-tab-btn ${activeTab === 'mevcut_durum' ? 'active tab-indigo' : ''}`}
+          onClick={() => { setActiveTab('mevcut_durum'); setSelectedChapterFilter('all'); }}
+        >
+          <span className="tab-title">Konut ve Barınma Alanlarının Mevcut Durumu</span>
+          <span className="tab-progress-badge indigo-badge">%{mevcutStats.totalProgress}</span>
+        </button>
+        <button 
+          className={`portal-tab-btn ${activeTab === 'politika' ? 'active tab-amber' : ''}`}
+          onClick={() => { setActiveTab('politika'); setSelectedChapterFilter('all'); }}
+        >
+          <span className="tab-title">Politikalar, Yatırımlar ve Teşviklerin Etkisi</span>
+          <span className="tab-progress-badge amber-badge">%{politikaStats.totalProgress}</span>
+        </button>
+      </div>
 
       {/* Main Content Area */}
       <main className="portal-main-content">
+
+
         {/* Executive Stats Bar */}
         <ReportStats stats={overallStats} />
 
@@ -645,8 +693,8 @@ export default function App() {
                 className="cf-select"
               >
                 <option value="all">Tüm Durumlar ({overallStats.total})</option>
-                {Object.keys(REPORT_STATUS_LABEL).map(k => (
-                  <option key={k} value={k}>{REPORT_STATUS_LABEL[k]}</option>
+                {[...new Set([...SPATIAL_STATUS_KEYS, ...NON_SPATIAL_STATUS_KEYS])].map(k => (
+                  <option key={k} value={k}>{getStatusLabel(k, SPATIAL_STATUS_KEYS.includes(k))}</option>
                 ))}
               </select>
             </div>
@@ -674,8 +722,8 @@ export default function App() {
                 onChange={e => setSelectedChapterFilter(e.target.value)}
                 className="cf-select"
               >
-                <option value="all">Tüm Bölümler (5)</option>
-                {KONUT_BARINMA_CHAPTERS.map(ch => (
+                <option value="all">Tüm Bölümler ({currentChapters.length})</option>
+                {currentChapters.map(ch => (
                   <option key={ch.num} value={ch.num}>{ch.num}. {ch.title.slice(0, 38)}…</option>
                 ))}
               </select>
@@ -719,39 +767,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Chapter Quick Jump Pills */}
-        <div className="chapter-jump-pills-bar">
-          <button
-            type="button"
-            className={`cjp-btn ${selectedChapterFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setSelectedChapterFilter('all')}
-          >
-            Tüm 5 Bölüm
-          </button>
-          {KONUT_BARINMA_CHAPTERS.map(ch => {
-            const defaultItems = ch.items || [];
-            const customs = customItems[ch.num] || [];
-            const count = defaultItems.length + customs.length;
-            const doneCount = [...defaultItems, ...customs].filter(item => {
-              const id = getItemId(item as any);
-              const st = reportStatus[id] || { status: (item as any).defaultStatus || 'not_started' };
-              return st.status === 'completed';
-            }).length;
 
-            return (
-              <button
-                key={ch.num}
-                type="button"
-                className={`cjp-btn ${selectedChapterFilter === ch.num ? 'active' : ''}`}
-                onClick={() => setSelectedChapterFilter(selectedChapterFilter === ch.num ? 'all' : ch.num)}
-                title={`${ch.num}. Bölüm: ${ch.title}`}
-              >
-                <span>{ch.num}. {ch.title.split(':')[0].slice(0, 22)}</span>
-                <span className="cjp-badge">{doneCount}/{count}</span>
-              </button>
-            );
-          })}
-        </div>
 
         {/* Chapters Cards List */}
         <div className="chapters-container">
@@ -804,6 +820,8 @@ export default function App() {
         chapterNotes={chapterNotes}
         customSubSections={customItems}
         onResetAll={handleResetAll}
+        chapters={currentChapters}
+        tabName={activeTab === 'mevcut_durum' ? 'Mevcut_Durum' : 'Politika_Yatirim'}
       />
     </div>
   );

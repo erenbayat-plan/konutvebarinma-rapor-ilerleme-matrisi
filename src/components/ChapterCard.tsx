@@ -1,6 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import type { ReportChapterGroup, ReportItem, ReportStatusType } from '../reportData';
-import { REPORT_STATUS_LABEL, STATUS_PROGRESS_MAP, computeAutoStatusForAnalyses } from '../reportData';
+import { 
+  REPORT_STATUS_LABEL, 
+  STATUS_PROGRESS_MAP, 
+  computeAutoStatusForAnalyses,
+  SPATIAL_STATUS_KEYS,
+  NON_SPATIAL_STATUS_KEYS,
+  getStatusLabel
+} from '../reportData';
 import type { ReportStatusItem } from '../syncService';
 
 interface ChapterCardProps {
@@ -312,23 +319,69 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         const st = getStatus(item);
                         const isDetailOpen = !!expandedDetails[id];
                         const analyses = item.analizler || [];
+                        const hasAnalyses = analyses.length > 0;
                         const analysesDoneCount = analyses.filter(a => (analysisStatuses[a.id] || a.status) === 'Tamamlandı').length;
+                        const hasChildren = group.items.some(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
+                        
+                        // Find parent code, e.g. '3.2.1' for '3.2.1.1'
+                        const parts = item.code.split('.');
+                        let isHiddenByParent = false;
+                        for (let i = parts.length - 1; i > 1; i--) {
+                          const pCode = parts.slice(0, i).join('.');
+                          if (collapsedGroups[pCode]) {
+                            isHiddenByParent = true;
+                            break;
+                          }
+                        }
+                        
+                        if (isHiddenByParent) return null;
+
 
                         return (
                           <React.Fragment key={item.id || item.code || idx}>
                             <tr 
-                              className={`sub-section-row ${group.isParentGroup ? 'is-sub-row' : 'is-root-row'} ${st.progress === 100 || st.status === 'mavi_depoda_guncel' ? 'row-completed' : ''} ${isDetailOpen ? 'row-expanded-active' : ''} ${analyses.length > 0 ? 'is-clickable' : ''}`}
+                              className={`sub-section-row ${group.isParentGroup ? 'is-sub-row' : 'is-root-row'} ${st.progress === 100 || st.status === 'mavi_depoda_guncel' ? 'row-completed' : ''} ${isDetailOpen ? 'row-expanded-active' : ''} ${(analyses.length > 0 || hasChildren) ? 'is-clickable' : ''}`}
                               onClick={(e) => {
                                 const target = e.target as HTMLElement;
                                 if (target.closest('select, input, textarea, button, a')) return;
                                 if (analyses.length > 0) {
                                   toggleDetail(id);
+                                } else if (hasChildren) {
+                                  toggleGroupCollapse(item.code);
                                 }
                               }}
-                              title={analyses.length > 0 ? `${item.title} analizlerini ${isDetailOpen ? 'kapatmak' : 'görmek'} için tıklayın` : undefined}
+                              title={analyses.length > 0 ? `${item.title} analizlerini ${isDetailOpen ? 'kapatmak' : 'görmek'} için tıklayın` : (hasChildren ? `Alt başlıkları ${collapsedGroups[item.code] ? 'genişletmek' : 'daraltmak'} için tıklayın` : undefined)}
                             >
                               {/* Kod */}
-                              <td className="sec-code">
+                              <td className="sec-code" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <div style={{ width: `${(parts.length - 2) * 24}px`, flexShrink: 0 }} />
+                                <div style={{ width: '20px', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                                  {hasChildren && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleGroupCollapse(item.code);
+                                      }}
+                                      style={{
+                                        background: 'var(--bg-elevated)',
+                                        border: '1px solid var(--border-light)',
+                                        cursor: 'pointer',
+                                        fontSize: '10px',
+                                        padding: '0',
+                                        color: 'var(--text-main)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: '20px',
+                                        height: '20px',
+                                        borderRadius: '4px'
+                                      }}
+                                    >
+                                      {collapsedGroups[item.code] ? '▶' : '▼'}
+                                    </button>
+                                  )}
+                                </div>
                                 <span className={`sec-code-badge ${group.isParentGroup ? 'sub-code-badge' : 'main-code-badge'}`}>
                                   {item.code}
                                 </span>
@@ -380,8 +433,8 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                     });
                                   }}
                                 >
-                                  {Object.keys(REPORT_STATUS_LABEL).map(k => (
-                                    <option key={k} value={k}>{REPORT_STATUS_LABEL[k]}</option>
+                                  {(hasAnalyses ? SPATIAL_STATUS_KEYS : NON_SPATIAL_STATUS_KEYS).map(k => (
+                                    <option key={k} value={k}>{getStatusLabel(k, hasAnalyses)}</option>
                                   ))}
                                 </select>
                               </td>

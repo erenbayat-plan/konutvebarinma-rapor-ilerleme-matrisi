@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KONUT_BARINMA_CHAPTERS, REPORT_STATUS_LABEL, ReportItem } from '../reportData';
+import { getStatusLabel, ReportItem, ReportChapterGroup } from '../reportData';
 import type { ReportStatusItem } from '../syncService';
 
 interface ExportModalProps {
@@ -10,6 +10,8 @@ interface ExportModalProps {
   chapterNotes: Record<string, string>;
   customSubSections: Record<string, any[]>;
   onResetAll: () => void;
+  chapters: ReportChapterGroup[];
+  tabName: string;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -19,7 +21,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   analysisStatuses,
   chapterNotes,
   customSubSections,
-  onResetAll
+  onResetAll,
+  chapters,
+  tabName
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -47,7 +51,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     ];
     const rows: string[][] = [headers];
 
-    KONUT_BARINMA_CHAPTERS.forEach(ch => {
+    chapters.forEach(ch => {
       const defaultItems = ch.items || [];
       const customs = customSubSections[ch.num] || [];
       const allItems = [...defaultItems, ...customs];
@@ -77,7 +81,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           `"${(item.sartnameUyum || '').replace(/"/g, '""')}"`,
           `"${(item.icerikOzeti || '').replace(/"/g, '""')}"`,
           `"${analysesStr.replace(/"/g, '""')}"`,
-          `"${REPORT_STATUS_LABEL[st.status] || st.status}"`,
+          `"${getStatusLabel(st.status, (item.analizler && item.analizler.length > 0) || false)}"`,
           `"%${st.progress || (st.status === 'completed' ? 100 : 0)}"`,
           `"${(st.author || '').replace(/"/g, '""')}"`,
           `"${(st.targetPages || item.defaultPages || '').replace(/"/g, '""')}"`,
@@ -92,7 +96,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Istanbul_Plan_2050_Konut_ve_Barinma_Rapor_Matrisi_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Istanbul_Plan_2050_${tabName}_Matrisi_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -108,7 +112,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     let totalItems = 0;
     let completedItems = 0;
 
-    KONUT_BARINMA_CHAPTERS.forEach(ch => {
+    chapters.forEach(ch => {
       const defaultItems = ch.items || [];
       const customs = customSubSections[ch.num] || [];
       const allItems = [...defaultItems, ...customs];
@@ -131,7 +135,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         const authorStr = st.author ? ` | Yazar: ${st.author}` : '';
         const pagesStr = st.targetPages ? ` | ${st.targetPages}` : '';
-        summaryText += `  • ${item.code} ${item.title} -> [${REPORT_STATUS_LABEL[st.status] || st.status}] (%${st.progress || 0})${authorStr}${pagesStr}\n`;
+        summaryText += `  • ${item.code} ${item.title} -> [${getStatusLabel(st.status, (item.analizler && item.analizler.length > 0) || false)}] (%${st.progress || 0})${authorStr}${pagesStr}\n`;
       });
     });
 
