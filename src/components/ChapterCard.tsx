@@ -57,6 +57,50 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   const getItemId = (item: ReportItem) => item.id || `konut_${item.code.replace(/\./g, '_')}`;
 
   const getStatus = (item: ReportItem): ReportStatusItem => {
+    const children = items.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
+    const hasChildren = children.length > 0;
+
+    if (hasChildren) {
+      const parentPartsLength = item.code.split('.').length;
+      const directChildren = children.filter(c => c.code.split('.').length === parentPartsLength + 1);
+      const targets = directChildren.length > 0 ? directChildren : children;
+
+      let sumProgress = 0;
+      let count = 0;
+      targets.forEach(child => {
+        const childSt = getStatus(child);
+        sumProgress += childSt.progress;
+        count++;
+      });
+
+      const progress = count > 0 ? Math.round(sumProgress / count) : 0;
+      const id = getItemId(item);
+      const saved = reportStatus[id] || {};
+      const hasAnalyses = (item.analizler && item.analizler.length > 0) || targets.some(c => c.analizler && c.analizler.length > 0);
+      
+      const getAutoStatusFromProgress = (p: number, isSpatial: boolean): ReportStatusType => {
+        if (p >= 100) return 'mavi_depoda_guncel';
+        if (p >= 98) return isSpatial ? 'mavi_depoya_gidebilir' : 'mavi_depoda_guncel';
+        if (p >= 85) return isSpatial ? 'rapor_okundu_sidar' : 'nm_kontrol_tamamlandi';
+        if (p >= 75) return isSpatial ? 'rapora_yazildi' : 'nm_kontrol_tamamlandi';
+        if (p >= 50) return isSpatial ? 'tamamlandi_raporu_yazilabilir' : 'nm_yazildi_kontrol_bekliyor';
+        if (p >= 25) return isSpatial ? 'analiz_tamamlandi' : 'nm_yaziliyor';
+        if (p > 0) return isSpatial ? 'analiz_devam_ediyor' : 'nm_yaziliyor';
+        return 'baslanmadi';
+      };
+
+      const status = getAutoStatusFromProgress(progress, hasAnalyses);
+
+      return {
+        status,
+        progress,
+        author: saved.author || '',
+        targetPages: saved.targetPages || item.defaultPages || '',
+        note: saved.note || '',
+        driveLink: saved.driveLink || ''
+      };
+    }
+
     const id = getItemId(item);
     if (reportStatus[id]) return reportStatus[id];
     if (item.analizler && item.analizler.length > 0) {
@@ -421,22 +465,31 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
 
                               {/* Rapor Durumu */}
                               <td>
-                                <select
-                                  className={`report-status-select st-${st.status}`}
-                                  value={st.status}
-                                  onChange={e => {
-                                    const newSt = e.target.value as ReportStatusType;
-                                    const autoProg = STATUS_PROGRESS_MAP[newSt] ?? 0;
-                                    onUpdateStatus(id, { 
-                                      status: newSt,
-                                      progress: autoProg
-                                    });
-                                  }}
-                                >
-                                  {(hasAnalyses ? SPATIAL_STATUS_KEYS : NON_SPATIAL_STATUS_KEYS).map(k => (
-                                    <option key={k} value={k}>{getStatusLabel(k, hasAnalyses)}</option>
-                                  ))}
-                                </select>
+                                {hasChildren ? (
+                                  <div className="auto-status-indicator" title="Bu başlığın durumu, altındaki alt başlıkların tamamlanma durumuna göre otomatik hesaplanmaktadır.">
+                                    <span className={`report-status-badge st-${st.status}`}>
+                                      {getStatusLabel(st.status, hasAnalyses)}
+                                    </span>
+                                    <span className="auto-status-subtext">Otomatik Hesaplanan</span>
+                                  </div>
+                                ) : (
+                                  <select
+                                    className={`report-status-select st-${st.status}`}
+                                    value={st.status}
+                                    onChange={e => {
+                                      const newSt = e.target.value as ReportStatusType;
+                                      const autoProg = STATUS_PROGRESS_MAP[newSt] ?? 0;
+                                      onUpdateStatus(id, { 
+                                        status: newSt,
+                                        progress: autoProg
+                                      });
+                                    }}
+                                  >
+                                    {(hasAnalyses ? SPATIAL_STATUS_KEYS : NON_SPATIAL_STATUS_KEYS).map(k => (
+                                      <option key={k} value={k}>{getStatusLabel(k, hasAnalyses)}</option>
+                                    ))}
+                                  </select>
+                                )}
                               </td>
 
                               {/* İlerleme Sütunu (Otomatik Yüzde & İlerleme Çubuğu) */}

@@ -398,24 +398,73 @@ export default function App() {
         }))
       ];
 
+      const getItemStatusAndProgress = (item: ReportItem): { status: ReportStatusType; progress: number } => {
+        const children = allItems.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
+        const hasChildren = children.length > 0;
+
+        if (hasChildren) {
+          const parentPartsLength = item.code.split('.').length;
+          const directChildren = children.filter(c => c.code.split('.').length === parentPartsLength + 1);
+          const targets = directChildren.length > 0 ? directChildren : children;
+
+          let sumProgress = 0;
+          let count = 0;
+          targets.forEach(child => {
+            const childSt = getItemStatusAndProgress(child);
+            sumProgress += childSt.progress;
+            count++;
+          });
+
+          const progress = count > 0 ? Math.round(sumProgress / count) : 0;
+          const hasAnalyses = (item.analizler && item.analizler.length > 0) || targets.some(c => c.analizler && c.analizler.length > 0);
+          
+          const getAutoStatusFromProgress = (p: number, isSpatial: boolean): ReportStatusType => {
+            if (p >= 100) return 'mavi_depoda_guncel';
+            if (p >= 98) return isSpatial ? 'mavi_depoya_gidebilir' : 'mavi_depoda_guncel';
+            if (p >= 85) return isSpatial ? 'rapor_okundu_sidar' : 'nm_kontrol_tamamlandi';
+            if (p >= 75) return isSpatial ? 'rapora_yazildi' : 'nm_kontrol_tamamlandi';
+            if (p >= 50) return isSpatial ? 'tamamlandi_raporu_yazilabilir' : 'nm_yazildi_kontrol_bekliyor';
+            if (p >= 25) return isSpatial ? 'analiz_tamamlandi' : 'nm_yaziliyor';
+            if (p > 0) return isSpatial ? 'analiz_devam_ediyor' : 'nm_yaziliyor';
+            return 'baslanmadi';
+          };
+
+          return {
+            status: getAutoStatusFromProgress(progress, hasAnalyses),
+            progress
+          };
+        }
+
+        const id = getItemId(item);
+        const rawStatus = reportStatus[id];
+        if (rawStatus) {
+          return {
+            status: rawStatus.status,
+            progress: rawStatus.progress ?? (STATUS_PROGRESS_MAP[rawStatus.status] ?? 0)
+          };
+        } else if (item.analizler && item.analizler.length > 0) {
+          const auto = computeAutoStatusForAnalyses(item.analizler, analysisStatuses);
+          return {
+            status: auto.status,
+            progress: auto.progress
+          };
+        } else {
+          const status = item.defaultStatus || 'baslanmadi';
+          return {
+            status,
+            progress: STATUS_PROGRESS_MAP[status] ?? 0
+          };
+        }
+      };
+
       allItems.forEach(item => {
         total++;
         const id = getItemId(item);
         const rawStatus = reportStatus[id];
-        let itemStatusType: ReportStatusType;
-        let itemProgress: number;
-
-        if (rawStatus) {
-          itemStatusType = rawStatus.status;
-          itemProgress = rawStatus.progress ?? (STATUS_PROGRESS_MAP[itemStatusType] ?? 0);
-        } else if (item.analizler && item.analizler.length > 0) {
-          const auto = computeAutoStatusForAnalyses(item.analizler, analysisStatuses);
-          itemStatusType = auto.status;
-          itemProgress = auto.progress;
-        } else {
-          itemStatusType = item.defaultStatus || 'baslanmadi';
-          itemProgress = STATUS_PROGRESS_MAP[itemStatusType] ?? 0;
-        }
+        
+        const computed = getItemStatusAndProgress(item);
+        const itemStatusType = computed.status;
+        const itemProgress = computed.progress;
 
         const itemState = rawStatus || {
           status: itemStatusType,
