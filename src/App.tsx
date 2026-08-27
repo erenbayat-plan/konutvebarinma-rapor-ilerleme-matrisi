@@ -289,12 +289,12 @@ export default function App() {
     triggerCloudSync(nextReportStatus, updatedAnalysis, customItems, chapterNotes, sectionOverrides);
   };
 
-  // --- Headings Actions (3rd and 4th Degree Only) ---
+  // --- Headings Actions (2nd, 3rd, and 4th Degree) ---
 
   const handleAddSubSection = (
     chapterNum: string, 
     formData: HeadingFormData, 
-    degree: 3 | 4, 
+    degree: 2 | 3 | 4, 
     parentCode?: string
   ) => {
     const parts = formData.code.split('.').filter(Boolean);
@@ -302,7 +302,11 @@ export default function App() {
     let level3 = '';
     let level4 = '';
 
-    if (degree === 3) {
+    if (degree === 2) {
+      level2 = `${formData.code} ${formData.title}`;
+      level3 = '';
+      level4 = '';
+    } else if (degree === 3) {
       level2 = parentCode || `${parts[0]}.${parts[1]}`;
       level3 = `${formData.code} ${formData.title}`;
     } else if (degree === 4) {
@@ -404,6 +408,92 @@ export default function App() {
     triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
   };
 
+  const handleEditSubSectionGroup = (
+    chapterNum: string,
+    groupCode: string,
+    updates: { code: string; title: string }
+  ) => {
+    const nextCustoms = { ...customItems };
+    const nextOverrides = { ...sectionOverrides };
+    const nextReport = { ...reportStatus };
+
+    // Update custom items belonging to this group
+    const currentCustoms = nextCustoms[chapterNum] || [];
+    nextCustoms[chapterNum] = currentCustoms.map(sub => {
+      if (sub.code === groupCode) {
+        const oldId = `konut_${sub.code.replace(/\./g, '_')}`;
+        const newId = `konut_${updates.code.replace(/\./g, '_')}`;
+        if (oldId !== newId && nextReport[oldId]) {
+          nextReport[newId] = nextReport[oldId];
+          delete nextReport[oldId];
+        }
+        return {
+          ...sub,
+          code: updates.code,
+          title: updates.title,
+          level2: `${updates.code} ${updates.title}`
+        };
+      }
+      if (sub.code.startsWith(groupCode + '.')) {
+        const newSubCode = updates.code !== groupCode 
+          ? sub.code.replace(new RegExp('^' + groupCode.replace(/\./g, '\\.')), updates.code)
+          : sub.code;
+        const oldId = `konut_${sub.code.replace(/\./g, '_')}`;
+        const newId = `konut_${newSubCode.replace(/\./g, '_')}`;
+        if (oldId !== newId && nextReport[oldId]) {
+          nextReport[newId] = nextReport[oldId];
+          delete nextReport[oldId];
+        }
+        return {
+          ...sub,
+          code: newSubCode,
+          level2: `${updates.code} ${updates.title}`
+        };
+      }
+      return sub;
+    });
+
+    // Update default items in static chapters
+    for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+      for (const it of ch.items) {
+        if (it.code === groupCode) {
+          const oldId = getItemId(it);
+          const newId = `konut_${updates.code.replace(/\./g, '_')}`;
+          if (oldId !== newId && nextReport[oldId]) {
+            nextReport[newId] = nextReport[oldId];
+            delete nextReport[oldId];
+          }
+          nextOverrides[it.id] = {
+            ...nextOverrides[it.id],
+            code: updates.code,
+            title: updates.title,
+            level2: `${updates.code} ${updates.title}`
+          };
+        } else if (it.code.startsWith(groupCode + '.')) {
+          const newItCode = updates.code !== groupCode 
+            ? it.code.replace(new RegExp('^' + groupCode.replace(/\./g, '\\.')), updates.code)
+            : it.code;
+          const oldId = getItemId(it);
+          const newId = `konut_${newItCode.replace(/\./g, '_')}`;
+          if (oldId !== newId && nextReport[oldId]) {
+            nextReport[newId] = nextReport[oldId];
+            delete nextReport[oldId];
+          }
+          nextOverrides[it.id] = {
+            ...nextOverrides[it.id],
+            code: newItCode,
+            level2: `${updates.code} ${updates.title}`
+          };
+        }
+      }
+    }
+
+    setCustomItems(nextCustoms);
+    setSectionOverrides(nextOverrides);
+    setReportStatus(nextReport);
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+  };
+
   const handleDeleteSubSection = (
     item: ReportItem & { customId?: string; isCustom?: boolean }
   ) => {
@@ -446,6 +536,45 @@ export default function App() {
     delete nextReport[oldId];
     setReportStatus(nextReport);
 
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+  };
+
+  const handleDeleteSubSectionGroup = (
+    chapterNum: string,
+    groupCode: string
+  ) => {
+    const nextCustoms = { ...customItems };
+    const nextOverrides = { ...sectionOverrides };
+    const nextReport = { ...reportStatus };
+
+    // Remove from customs
+    const currentCustoms = nextCustoms[chapterNum] || [];
+    nextCustoms[chapterNum] = currentCustoms.filter(sub => {
+      const isMatch = sub.code === groupCode || sub.code.startsWith(groupCode + '.');
+      if (isMatch) {
+        const id = `konut_${sub.code.replace(/\./g, '_')}`;
+        delete nextReport[id];
+      }
+      return !isMatch;
+    });
+
+    // Mark deleted in overrides
+    for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+      for (const it of ch.items) {
+        if (it.code === groupCode || it.code.startsWith(groupCode + '.')) {
+          nextOverrides[it.id] = {
+            ...nextOverrides[it.id],
+            deleted: true
+          };
+          const id = getItemId(it);
+          delete nextReport[id];
+        }
+      }
+    }
+
+    setCustomItems(nextCustoms);
+    setSectionOverrides(nextOverrides);
+    setReportStatus(nextReport);
     triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
   };
 
@@ -1213,6 +1342,8 @@ export default function App() {
                 onAddSubSection={handleAddSubSection}
                 onEditSubSection={handleEditSubSection}
                 onDeleteSubSection={handleDeleteSubSection}
+                onEditSubSectionGroup={handleEditSubSectionGroup}
+                onDeleteSubSectionGroup={handleDeleteSubSectionGroup}
                 onAddAnalysis={handleAddAnalysis}
                 onEditAnalysis={handleEditAnalysis}
                 onDeleteAnalysis={handleDeleteAnalysis}

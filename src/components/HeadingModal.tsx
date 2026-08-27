@@ -13,7 +13,7 @@ export interface HeadingFormData {
 interface HeadingModalProps {
   isOpen: boolean;
   mode: 'add' | 'edit';
-  degree: 3 | 4;
+  degree: 2 | 3 | 4;
   parentCode?: string;
   parentTitle?: string;
   initialData?: HeadingFormData;
@@ -57,7 +57,20 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
       } else {
         // Auto generate next code based on parent and existing codes
         let nextCode = '';
-        if (degree === 3) {
+        if (degree === 2) {
+          // Parent is chapter (e.g. '2' or '3')
+          const prefix = parentCode ? `${parentCode}.` : '1.';
+          const matching = existingCodes.filter(c => c.startsWith(prefix));
+          let maxIndex = 0;
+          matching.forEach(c => {
+            const parts = c.split('.');
+            if (parts.length === 2) {
+              const num = parseInt(parts[1], 10);
+              if (!isNaN(num) && num > maxIndex) maxIndex = num;
+            }
+          });
+          nextCode = `${prefix}${maxIndex + 1}`;
+        } else if (degree === 3) {
           // Parent is level 2 (e.g. '3.1')
           const prefix = parentCode ? `${parentCode}.` : '3.1.';
           const matching = existingCodes.filter(c => c.startsWith(prefix));
@@ -102,11 +115,15 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
 
   const validate = (): boolean => {
     if (!formData.code.trim()) {
-      setError('Lütfen başlık kodunu girin (Örn: 3.1.2 veya 3.2.1.1)');
+      setError('Lütfen başlık kodunu girin (Örn: 2.2, 3.1.2 veya 3.2.1.1)');
       return false;
     }
 
     const parts = formData.code.trim().split('.').filter(Boolean);
+    if (degree === 2 && parts.length !== 2) {
+      setError('2. derece başlık kodu tam 2 kısımdan oluşmalıdır (Örn: 2.2 veya 3.5)');
+      return false;
+    }
     if (degree === 3 && parts.length !== 3) {
       setError('3. derece başlık kodu tam 3 kısımdan oluşmalıdır (Örn: 3.1.3)');
       return false;
@@ -204,7 +221,7 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
                   <input
                     type="text"
                     className="form-input code-input"
-                    placeholder={degree === 3 ? "Örn: 3.1.4" : "Örn: 3.2.1.3"}
+                    placeholder={degree === 2 ? "Örn: 2.3" : degree === 3 ? "Örn: 3.1.4" : "Örn: 3.2.1.3"}
                     value={formData.code}
                     onChange={e => {
                       setFormData(prev => ({ ...prev, code: e.target.value }));
@@ -213,7 +230,11 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
                     required
                   />
                   <span className="form-field-hint">
-                    {degree === 3 ? "3 kademeli hiyerarşi (X.Y.Z)" : "4 kademeli alt hiyerarşi (X.Y.Z.W)"}
+                    {degree === 2 
+                      ? "2 kademeli ana alt başlık (X.Y)" 
+                      : degree === 3 
+                        ? "3 kademeli hiyerarşi (X.Y.Z)" 
+                        : "4 kademeli alt hiyerarşi (X.Y.Z.W)"}
                   </span>
                 </div>
 

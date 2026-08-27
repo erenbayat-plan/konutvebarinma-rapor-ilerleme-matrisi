@@ -26,7 +26,7 @@ interface ChapterCardProps {
   onAddSubSection: (
     chapterNum: string, 
     formData: HeadingFormData, 
-    degree: 3 | 4, 
+    degree: 2 | 3 | 4, 
     parentCode?: string
   ) => void;
   onEditSubSection: (
@@ -35,6 +35,15 @@ interface ChapterCardProps {
   ) => void;
   onDeleteSubSection: (
     item: ReportItem & { customId?: string; isCustom?: boolean }
+  ) => void;
+  onEditSubSectionGroup?: (
+    chapterNum: string,
+    groupCode: string,
+    updates: { code: string; title: string }
+  ) => void;
+  onDeleteSubSectionGroup?: (
+    chapterNum: string,
+    groupCode: string
   ) => void;
   onAddAnalysis: (
     item: ReportItem & { customId?: string; isCustom?: boolean },
@@ -65,6 +74,8 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   onAddSubSection,
   onEditSubSection,
   onDeleteSubSection,
+  onEditSubSectionGroup,
+  onDeleteSubSectionGroup,
   onAddAnalysis,
   onEditAnalysis,
   onDeleteAnalysis,
@@ -80,10 +91,11 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   const [headingModalState, setHeadingModalState] = useState<{
     isOpen: boolean;
     mode: 'add' | 'edit';
-    degree: 3 | 4;
+    degree: 2 | 3 | 4;
     parentCode?: string;
     parentTitle?: string;
     targetItem?: ReportItem & { customId?: string; isCustom?: boolean };
+    targetGroup?: { groupCode: string; groupTitle: string };
   }>({
     isOpen: false,
     mode: 'add',
@@ -267,7 +279,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   };
 
   // --- Handlers for Headings Actions ---
-  const handleOpenAddHeading = (degree: 3 | 4, parentCode: string, parentTitle: string) => {
+  const handleOpenAddHeading = (degree: 2 | 3 | 4, parentCode: string, parentTitle: string) => {
     setHeadingModalState({
       isOpen: true,
       mode: 'add',
@@ -278,17 +290,29 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   };
 
   const handleOpenEditHeading = (item: ReportItem & { customId?: string; isCustom?: boolean }) => {
-    const degree = getHeadingDegree(item.code) as 3 | 4;
+    const deg = getHeadingDegree(item.code);
+    const degree = (deg === 4 ? 4 : deg === 3 ? 3 : 2) as 2 | 3 | 4;
     // Extract parent info
     const parts = item.code.split('.');
-    const parentCode = parts.slice(0, -1).join('.');
+    const parentCode = parts.length > 1 ? parts.slice(0, -1).join('.') : chapter.num;
     setHeadingModalState({
       isOpen: true,
       mode: 'edit',
-      degree: (degree === 4 ? 4 : 3),
+      degree,
       parentCode,
-      parentTitle: item.level2 || item.level3 || '',
+      parentTitle: degree === 2 ? chapter.title : (item.level2 || item.level3 || ''),
       targetItem: item
+    });
+  };
+
+  const handleOpenEditHeadingGroup = (groupCode: string, groupTitle: string) => {
+    setHeadingModalState({
+      isOpen: true,
+      mode: 'edit',
+      degree: 2,
+      parentCode: chapter.num,
+      parentTitle: chapter.title,
+      targetGroup: { groupCode, groupTitle }
     });
   };
 
@@ -303,6 +327,22 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
       onConfirm: () => {
         setConfirmModalState(prev => ({ ...prev, isOpen: false }));
         onDeleteSubSection(item);
+      }
+    });
+  };
+
+  const handleOpenDeleteHeadingGroup = (groupCode: string, groupTitle: string) => {
+    setConfirmModalState({
+      isOpen: true,
+      title: '2. Derece Başlığı Silmek İstiyor musunuz?',
+      message: `"${groupCode} ${groupTitle}" başlıklı 2. derece bölüm ve altındaki tüm alt başlıklar ile analizler kaldırılacaktır. Bu işlem geri alınamaz.`,
+      variant: 'danger',
+      confirmLabel: 'Evet, Sil',
+      onConfirm: () => {
+        setConfirmModalState(prev => ({ ...prev, isOpen: false }));
+        if (onDeleteSubSectionGroup) {
+          onDeleteSubSectionGroup(chapter.num, groupCode);
+        }
       }
     });
   };
@@ -373,6 +413,19 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
               />
             </div>
           </div>
+
+          <button
+            type="button"
+            className="btn-add-sub-minimal"
+            title={`${chapter.num}. Bölüm altına 2. Düzey yeni başlık ekle`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenAddHeading(2, chapter.num, chapter.title);
+            }}
+          >
+            <Plus size={12} />
+            <span>2. Düzey Başlık Ekle</span>
+          </button>
 
           <button 
             type="button"
@@ -490,6 +543,28 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                   <Plus size={12} />
                                   <span>Alt Başlık Ekle</span>
                                 </button>
+                                <button
+                                  type="button"
+                                  className="action-symbol-btn edit-symbol-btn"
+                                  title="2. Düzey Başlığı Düzenle"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenEditHeadingGroup(group.groupCode, group.groupTitle);
+                                  }}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="action-symbol-btn delete-circle-btn"
+                                  title="2. Düzey Başlığı ve Alt Başlıklarını Kaldır"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenDeleteHeadingGroup(group.groupCode, group.groupTitle);
+                                  }}
+                                >
+                                  <X size={13} />
+                                </button>
                                 <div className="sgh-progress-wrap">
                                   <span className="sgh-prog-text">{groupCompletedCount}/{group.items.length} Tamamlandı</span>
                                   <div className="sgh-mini-track">
@@ -516,7 +591,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         </tr>
                       )}
 
-                      {/* Alt Başlık Satırları (3. ve 4. Düzey veya Bağımsız 2. Düzey) */}
+                      {/* Alt Başlık Satırları (2., 3. ve 4. Düzey) */}
                       {(!group.isParentGroup || !isGroupCollapsed) && group.items.map((item, idx) => {
                         const id = getItemId(item);
                         const st = getStatus(item);
@@ -526,9 +601,9 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         const analysesDoneCount = analyses.filter(a => (analysisStatuses[a.id] || a.status) === 'Tamamlandı').length;
                         const hasChildren = group.items.some(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
                         
-                        // Degree Calculation: Only 3rd and 4th degree headings can be edited, deleted, or added
+                        // Degree Calculation: 2nd, 3rd, and 4th degree headings can be edited, deleted, or added
                         const degree = getHeadingDegree(item.code);
-                        const is3rdOr4thDegree = degree === 3 || degree === 4;
+                        const isEditableDegree = degree === 2 || degree === 3 || degree === 4;
 
                         // Find parent code, e.g. '3.2.1' for '3.2.1.1'
                         const parts = item.code.split('.');
@@ -673,10 +748,25 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 </div>
                               </td>
 
-                              {/* İşlem Sütunu: Sadece 3. ve 4. Derece Başlıklar İçin Minimal Butonlar */}
+                              {/* İşlem Sütunu: 2., 3. ve 4. Derece Başlıklar İçin Minimal Butonlar */}
                               <td className="row-actions-cell">
-                                {is3rdOr4thDegree ? (
+                                {isEditableDegree ? (
                                   <div className="row-actions-group" onClick={e => e.stopPropagation()}>
+                                    {/* 3. Düzey Alt Başlık Ekleme Butonu (Sadece 2. Derece Başlıklarda) */}
+                                    {degree === 2 && (
+                                      <button
+                                        type="button"
+                                        className="action-symbol-btn add-symbol-btn"
+                                        title={`${item.code} altına 3. Düzey alt başlık ekle`}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenAddHeading(3, item.code, item.title);
+                                        }}
+                                      >
+                                        <Plus size={13} />
+                                      </button>
+                                    )}
+
                                     {/* 4. Düzey Alt Başlık Ekleme Butonu (Sadece 3. Derece Başlıklarda) */}
                                     {degree === 3 && (
                                       <button
@@ -847,15 +937,25 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                 icerikOzeti: headingModalState.targetItem.icerikOzeti,
                 sartnameUyum: headingModalState.targetItem.sartnameUyum
               }
+            : headingModalState.targetGroup
+            ? {
+                code: headingModalState.targetGroup.groupCode,
+                title: headingModalState.targetGroup.groupTitle
+              }
             : undefined
         }
         existingCodes={allItemCodes}
-        onClose={() => setHeadingModalState(prev => ({ ...prev, isOpen: false }))}
+        onClose={() => setHeadingModalState(prev => ({ ...prev, isOpen: false, targetGroup: undefined }))}
         onSubmit={(formData) => {
           if (headingModalState.mode === 'add') {
             onAddSubSection(chapter.num, formData, headingModalState.degree, headingModalState.parentCode);
           } else if (headingModalState.targetItem) {
             onEditSubSection(headingModalState.targetItem, formData);
+          } else if (headingModalState.targetGroup && onEditSubSectionGroup) {
+            onEditSubSectionGroup(chapter.num, headingModalState.targetGroup.groupCode, {
+              code: formData.code,
+              title: formData.title
+            });
           }
         }}
       />
