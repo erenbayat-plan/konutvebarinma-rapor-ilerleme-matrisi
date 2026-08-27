@@ -915,7 +915,17 @@ export default function App() {
           defaultPages: c.defaultPages || '8-10 sf',
           analizler: c.analizler || []
         }))
-      ];
+      ].sort((a, b) => {
+        const partsA = a.code.split('.').map(p => parseInt(p, 10) || 0);
+        const partsB = b.code.split('.').map(p => parseInt(p, 10) || 0);
+        const maxLen = Math.max(partsA.length, partsB.length);
+        for (let i = 0; i < maxLen; i++) {
+          const va = partsA[i] ?? -1;
+          const vb = partsB[i] ?? -1;
+          if (va !== vb) return va - vb;
+        }
+        return 0;
+      });
 
       const getItemStatusAndProgress = (item: ReportItem): { status: ReportStatusType; progress: number } => {
         const children = allItems.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
@@ -1102,7 +1112,17 @@ export default function App() {
         customId: s.id
       }));
 
-      let allItems = [...defaultItems, ...customs];
+      let allItems = [...defaultItems, ...customs].sort((a, b) => {
+        const partsA = a.code.split('.').map(p => parseInt(p, 10) || 0);
+        const partsB = b.code.split('.').map(p => parseInt(p, 10) || 0);
+        const maxLen = Math.max(partsA.length, partsB.length);
+        for (let i = 0; i < maxLen; i++) {
+          const va = partsA[i] ?? -1;
+          const vb = partsB[i] ?? -1;
+          if (va !== vb) return va - vb;
+        }
+        return 0;
+      });
 
       if (searchTerm) {
         const sLower = searchTerm.toLowerCase();

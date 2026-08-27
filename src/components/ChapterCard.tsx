@@ -146,21 +146,26 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
     return code.split('.').filter(Boolean).length;
   };
 
-  // Sorted items based on chapterOrder
-  const sortedItems = useMemo(() => {
-    if (!chapterOrder || chapterOrder.length === 0) return items;
-    const orderMap = new Map<string, number>();
-    chapterOrder.forEach((id, idx) => orderMap.set(id, idx));
+  // Compare two code strings numerically (e.g. "3.1.2" vs "3.1.10")
+  const compareCodeHierarchy = (codeA: string, codeB: string): number => {
+    const partsA = codeA.split('.').map(p => parseInt(p, 10) || 0);
+    const partsB = codeB.split('.').map(p => parseInt(p, 10) || 0);
+    const maxLen = Math.max(partsA.length, partsB.length);
+    for (let i = 0; i < maxLen; i++) {
+      const a = partsA[i] ?? -1;
+      const b = partsB[i] ?? -1;
+      if (a !== b) return a - b;
+    }
+    return 0;
+  };
 
-    return [...items].sort((a, b) => {
-      const keyA = getItemId(a);
-      const keyB = getItemId(b);
-      const idxA = orderMap.has(keyA) ? orderMap.get(keyA)! : 9999;
-      const idxB = orderMap.has(keyB) ? orderMap.get(keyB)! : 9999;
-      if (idxA !== idxB) return idxA - idxB;
-      return 0;
-    });
-  }, [items, chapterOrder]);
+  // Sorted items: always sort by hierarchical code order.
+  // chapterOrder (drag-drop) is respected within the same parent group,
+  // but code-based hierarchy is the primary sort to ensure
+  // 3.1.1 < 3.1.1.1 < 3.1.1.2 < 3.1.2 < 3.2.1 etc.
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => compareCodeHierarchy(a.code, b.code));
+  }, [items]);
 
   const getStatus = (item: ReportItem): ReportStatusItem => {
     const children = sortedItems.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
