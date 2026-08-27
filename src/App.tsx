@@ -32,6 +32,7 @@ const CUSTOM_ITEMS_KEY = 'plan2050_kb_custom_items_v2';
 const CHAPTER_NOTES_KEY = 'plan2050_kb_chapter_notes_v2';
 const ANALYSIS_STATUS_KEY = 'plan2050_kb_analysis_statuses_v2';
 const SECTION_OVERRIDES_KEY = 'plan2050_kb_section_overrides_v2';
+const CHAPTER_ORDERS_KEY = 'plan2050_kb_chapter_orders_v2';
 
 export default function App() {
   // Primary persistent state
@@ -74,6 +75,15 @@ export default function App() {
   const [chapterNotes, setChapterNotes] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem(CHAPTER_NOTES_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [chapterOrders, setChapterOrders] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem(CHAPTER_ORDERS_KEY);
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -127,6 +137,12 @@ export default function App() {
     } catch (e) { console.error(e); }
   }, [chapterNotes]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAPTER_ORDERS_KEY, JSON.stringify(chapterOrders));
+    } catch (e) { console.error(e); }
+  }, [chapterOrders]);
+
   // Real-time Cloud Sync & Multi-tab Sync
   useEffect(() => {
     let isMounted = true;
@@ -150,6 +166,9 @@ export default function App() {
       if (cloudData.chapterNotes) {
         setChapterNotes(prev => JSON.stringify(prev) !== JSON.stringify(cloudData.chapterNotes) ? cloudData.chapterNotes! : prev);
       }
+      if (cloudData.chapterOrders) {
+        setChapterOrders(prev => JSON.stringify(prev) !== JSON.stringify(cloudData.chapterOrders) ? cloudData.chapterOrders! : prev);
+      }
       setCloudSyncStatus('synced');
     };
 
@@ -160,6 +179,7 @@ export default function App() {
       if (tabState.customSubSections) setCustomItems(tabState.customSubSections);
       if (tabState.sectionOverrides) setSectionOverrides(tabState.sectionOverrides);
       if (tabState.chapterNotes) setChapterNotes(tabState.chapterNotes);
+      if (tabState.chapterOrders) setChapterOrders(tabState.chapterOrders);
       setCloudSyncStatus('synced');
     });
 
@@ -180,7 +200,8 @@ export default function App() {
     nextAnalysis: Record<string, 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede'>,
     nextCustom: Record<string, CustomSubSection[]>,
     nextNotes: Record<string, string>,
-    nextOverrides: Record<string, SectionOverride>
+    nextOverrides: Record<string, SectionOverride>,
+    nextOrders: Record<string, string[]> = chapterOrders
   ) => {
     const newVersion = Date.now();
     localVersionRef.current = newVersion;
@@ -194,6 +215,7 @@ export default function App() {
         customSubSections: nextCustom,
         chapterNotes: nextNotes,
         sectionOverrides: nextOverrides,
+        chapterOrders: nextOrders,
         lastUpdated: newVersion
       }),
       (status) => {
@@ -784,20 +806,28 @@ export default function App() {
     triggerCloudSync(reportStatus, analysisStatuses, customItems, updatedNotes, sectionOverrides);
   };
 
+  const handleReorderItems = (chapterNum: string, newOrder: string[]) => {
+    const nextOrders = { ...chapterOrders, [chapterNum]: newOrder };
+    setChapterOrders(nextOrders);
+    triggerCloudSync(reportStatus, analysisStatuses, customItems, chapterNotes, sectionOverrides, nextOrders);
+  };
+
   const handleResetAll = () => {
     setReportStatus({});
     setAnalysisStatuses({});
     setCustomItems({});
     setSectionOverrides({});
     setChapterNotes({});
+    setChapterOrders({});
     try {
       localStorage.removeItem(REPORT_STATUS_KEY);
       localStorage.removeItem(ANALYSIS_STATUS_KEY);
       localStorage.removeItem(CUSTOM_ITEMS_KEY);
       localStorage.removeItem(SECTION_OVERRIDES_KEY);
       localStorage.removeItem(CHAPTER_NOTES_KEY);
+      localStorage.removeItem(CHAPTER_ORDERS_KEY);
     } catch {}
-    triggerCloudSync({}, {}, {}, {}, {});
+    triggerCloudSync({}, {}, {}, {}, {}, {});
   };
 
   const handleToggleCollapse = (chapterNum: string) => {
@@ -1332,6 +1362,7 @@ export default function App() {
                 key={chapter.num}
                 chapter={chapter}
                 items={items}
+                chapterOrder={chapterOrders[chapter.num] || []}
                 reportStatus={reportStatus}
                 analysisStatuses={analysisStatuses}
                 chapterNotes={chapterNotes[chapter.num] || ''}
@@ -1348,6 +1379,7 @@ export default function App() {
                 onEditAnalysis={handleEditAnalysis}
                 onDeleteAnalysis={handleDeleteAnalysis}
                 onUpdateChapterNotes={handleUpdateChapterNotes}
+                onReorderItems={handleReorderItems}
               />
             ))
           )}

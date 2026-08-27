@@ -849,15 +849,78 @@ button, select, input, textarea {
   line-height: 1.35;
 }
 
-.custom-tag {
-  font-size: 9.5px;
-  font-family: 'IBM Plex Mono', monospace;
-  color: #2563EB;
-  background: #EFF6FF;
-  border: 1px solid #DBEAFE;
-  padding: 1px 5px;
+/* Drag and Drop Styling */
+.row-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
+  cursor: grab;
+  padding: 2px;
   border-radius: 3px;
-  white-space: nowrap;
+  opacity: 0.45;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.row-drag-handle:hover {
+  opacity: 1;
+  color: #1E293B;
+  background-color: #E2E8F0;
+}
+
+.row-drag-handle:active {
+  cursor: grabbing;
+}
+
+.sgh-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748B;
+  cursor: grab;
+  padding: 3px;
+  border-radius: 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.sgh-drag-handle:hover {
+  opacity: 1;
+  color: #0F172A;
+  background-color: #CBD5E1;
+}
+
+.sgh-drag-handle:active {
+  cursor: grabbing;
+}
+
+.report-row-is-dragging {
+  opacity: 0.35 !important;
+  background-color: #F1F5F9 !important;
+}
+
+.report-row-drag-over-top td {
+  box-shadow: inset 0 3px 0 0 #2563EB !important;
+}
+
+.report-row-drag-over-bottom td {
+  box-shadow: inset 0 -3px 0 0 #2563EB !important;
+}
+
+.sgh-is-dragging {
+  opacity: 0.35 !important;
+}
+
+.sgh-drag-over-top td {
+  box-shadow: inset 0 3px 0 0 #2563EB !important;
+}
+
+.sgh-drag-over-bottom td {
+  box-shadow: inset 0 -3px 0 0 #2563EB !important;
 }
 
 /* Status Select */

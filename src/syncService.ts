@@ -50,6 +50,7 @@ export type AppState = {
   sectionOverrides?: Record<string, SectionOverride>;
   analysisStatuses?: Record<string, 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede'>;
   chapterNotes?: Record<string, string>;
+  chapterOrders?: Record<string, string[]>; // keyed by chapterNum -> ordered item IDs or codes
   lastUpdated?: number;
 };
 

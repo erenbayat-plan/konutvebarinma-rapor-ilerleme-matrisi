@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Pencil, Plus, X, Layers, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Pencil, Plus, X, Layers, AlertTriangle, CheckCircle2, GripVertical } from 'lucide-react';
 import type { ReportChapterGroup, ReportItem, ReportStatusType, AnalysisItem } from '../reportData';
 import { 
   STATUS_PROGRESS_MAP, 
@@ -16,6 +16,7 @@ import { ConfirmModal } from './ConfirmModal';
 interface ChapterCardProps {
   chapter: ReportChapterGroup;
   items: (ReportItem & { customId?: string; isCustom?: boolean })[];
+  chapterOrder?: string[];
   reportStatus: Record<string, ReportStatusItem>;
   analysisStatuses: Record<string, 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede'>;
   chapterNotes: string;
@@ -59,11 +60,13 @@ interface ChapterCardProps {
     analysisId: string
   ) => void;
   onUpdateChapterNotes: (chapterNum: string, note: string) => void;
+  onReorderItems?: (chapterNum: string, newOrder: string[]) => void;
 }
 
 export const ChapterCard: React.FC<ChapterCardProps> = ({
   chapter,
   items,
+  chapterOrder,
   reportStatus,
   analysisStatuses,
   chapterNotes,
@@ -79,13 +82,23 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   onAddAnalysis,
   onEditAnalysis,
   onDeleteAnalysis,
-  onUpdateChapterNotes
+  onUpdateChapterNotes,
+  onReorderItems
 }) => {
   const [showChapterNote, setShowChapterNote] = useState(false);
   // Expanded detail drawers by item ID
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   // Collapsed 2nd-level sub-groups (e.g. "3.1", "3.2", "4.1")
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  // Drag and drop state
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [dragOverPos, setDragOverPos] = useState<'top' | 'bottom'>('bottom');
+
+  const [draggedGroupCode, setDraggedGroupCode] = useState<string | null>(null);
+  const [dragOverGroupCode, setDragOverGroupCode] = useState<string | null>(null);
+  const [dragOverGroupPos, setDragOverGroupPos] = useState<'top' | 'bottom'>('bottom');
 
   // Modals state
   const [headingModalState, setHeadingModalState] = useState<{
@@ -133,8 +146,24 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
     return code.split('.').filter(Boolean).length;
   };
 
+  // Sorted items based on chapterOrder
+  const sortedItems = useMemo(() => {
+    if (!chapterOrder || chapterOrder.length === 0) return items;
+    const orderMap = new Map<string, number>();
+    chapterOrder.forEach((id, idx) => orderMap.set(id, idx));
+
+    return [...items].sort((a, b) => {
+      const keyA = getItemId(a);
+      const keyB = getItemId(b);
+      const idxA = orderMap.has(keyA) ? orderMap.get(keyA)! : 9999;
+      const idxB = orderMap.has(keyB) ? orderMap.get(keyB)! : 9999;
+      if (idxA !== idxB) return idxA - idxB;
+      return 0;
+    });
+  }, [items, chapterOrder]);
+
   const getStatus = (item: ReportItem): ReportStatusItem => {
-    const children = items.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
+    const children = sortedItems.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
     const hasChildren = children.length > 0;
 
     if (hasChildren) {
@@ -204,13 +233,13 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   };
 
   // Chapter overall statistics
-  const totalCount = items.length;
-  const completedCount = items.filter(item => {
+  const totalCount = sortedItems.length;
+  const completedCount = sortedItems.filter(item => {
     const st = getStatus(item);
     return st.status === 'mavi_depoda_guncel' || st.status === 'mavi_depoya_gidebilir' || st.status === 'completed' || st.progress >= 98;
   }).length;
 
-  const sumProgress = items.reduce((acc, item) => {
+  const sumProgress = sortedItems.reduce((acc, item) => {
     const st = getStatus(item);
     const itemProg = typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[st.status] ?? 0);
     return acc + itemProg;
@@ -220,7 +249,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   // Analysis statistics in this chapter
   let totalAnalysesCount = 0;
   let completedAnalysesCount = 0;
-  items.forEach(item => {
+  sortedItems.forEach(item => {
     (item.analizler || []).forEach(an => {
       totalAnalysesCount++;
       const currentSt = analysisStatuses[an.id] || an.status;
@@ -232,7 +261,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   const sectionGroups = useMemo(() => {
     const groupsMap = new Map<string, { groupCode: string; groupTitle: string; items: (ReportItem & { customId?: string; isCustom?: boolean })[] }>();
 
-    items.forEach(item => {
+    sortedItems.forEach(item => {
       // Check if code matches 3-level pattern e.g. "3.1.1", "2.1.3", "4.2.1"
       const subMatch = item.code.match(/^(\d+\.\d+)\.(\d+)/);
       let groupKey: string;
@@ -268,7 +297,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
         isParentGroup
       };
     });
-  }, [items]);
+  }, [sortedItems]);
 
   const toggleDetail = (id: string) => {
     setExpandedDetails(prev => ({ ...prev, [id]: !prev[id] }));
@@ -276,6 +305,40 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
 
   const toggleGroupCollapse = (groupCode: string) => {
     setCollapsedGroups(prev => ({ ...prev, [groupCode]: !prev[groupCode] }));
+  };
+
+  // --- Handlers for Drag & Drop Reordering ---
+  const handleItemReorder = (draggedId: string, targetId: string, position: 'top' | 'bottom') => {
+    if (!onReorderItems || draggedId === targetId) return;
+    const currentList = sortedItems.map(it => getItemId(it));
+    const fromIdx = currentList.indexOf(draggedId);
+    const toIdx = currentList.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const newList = [...currentList];
+    const [movedItem] = newList.splice(fromIdx, 1);
+    const targetCurrentIdx = newList.indexOf(targetId);
+    const insertIdx = position === 'top' ? targetCurrentIdx : targetCurrentIdx + 1;
+    newList.splice(insertIdx, 0, movedItem);
+
+    onReorderItems(chapter.num, newList);
+  };
+
+  const handleGroupReorder = (draggedGroup: string, targetGroup: string, position: 'top' | 'bottom') => {
+    if (!onReorderItems || draggedGroup === targetGroup) return;
+    const groupOrder = sectionGroups.map(g => g.groupCode);
+    const fromGroupIdx = groupOrder.indexOf(draggedGroup);
+    const toGroupIdx = groupOrder.indexOf(targetGroup);
+    if (fromGroupIdx === -1 || toGroupIdx === -1) return;
+
+    const newGroups = [...sectionGroups];
+    const [movedGroup] = newGroups.splice(fromGroupIdx, 1);
+    const targetCurrentIdx = newGroups.findIndex(g => g.groupCode === targetGroup);
+    const insertIdx = position === 'top' ? targetCurrentIdx : targetCurrentIdx + 1;
+    newGroups.splice(insertIdx, 0, movedGroup);
+
+    const newOrderedIds = newGroups.flatMap(g => g.items.map(it => getItemId(it)));
+    onReorderItems(chapter.num, newOrderedIds);
   };
 
   // --- Handlers for Headings Actions ---
@@ -516,13 +579,45 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                       {/* 2. Düzey Başlık Çubuğu (Örn: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.2 vb.) */}
                       {group.isParentGroup && (
                         <tr 
-                          className={`section-group-header-row ${isGroupCollapsed ? 'is-collapsed' : 'is-expanded'}`}
+                          draggable={true}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', `group_${group.groupCode}`);
+                            setDraggedGroupCode(group.groupCode);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            if (draggedGroupCode && draggedGroupCode !== group.groupCode) {
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              const relY = e.clientY - rect.top;
+                              setDragOverGroupCode(group.groupCode);
+                              setDragOverGroupPos(relY < rect.height / 2 ? 'top' : 'bottom');
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverGroupCode === group.groupCode) setDragOverGroupCode(null);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (draggedGroupCode && draggedGroupCode !== group.groupCode) {
+                              handleGroupReorder(draggedGroupCode, group.groupCode, dragOverGroupPos);
+                            }
+                            setDraggedGroupCode(null);
+                            setDragOverGroupCode(null);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedGroupCode(null);
+                            setDragOverGroupCode(null);
+                          }}
+                          className={`section-group-header-row ${isGroupCollapsed ? 'is-collapsed' : 'is-expanded'} ${draggedGroupCode === group.groupCode ? 'sgh-is-dragging' : ''} ${dragOverGroupCode === group.groupCode ? (dragOverGroupPos === 'top' ? 'sgh-drag-over-top' : 'sgh-drag-over-bottom') : ''}`}
                           onClick={() => toggleGroupCollapse(group.groupCode)}
-                          title={`${group.groupTitle} alt başlıklarını ${isGroupCollapsed ? 'genişletmek' : 'daraltmak'} için tıklayın`}
+                          title={`${group.groupTitle} alt başlıklarını ${isGroupCollapsed ? 'genişletmek' : 'daraltmak'} için tıklayın. Yerini değiştirmek için sürükleyin.`}
                         >
                           <td colSpan={6} className="section-group-header-cell">
                             <div className="sgh-content">
                               <div className="sgh-left">
+                                <span className="sgh-drag-handle" title="Başlığı sürükleyerek sırasını değiştirin">
+                                  <GripVertical size={14} />
+                                </span>
                                 <span className="sgh-code-badge">{group.groupCode}</span>
                                 <span className="sgh-title">{group.groupTitle}</span>
                                 <span className="sgh-count-pill">
@@ -621,10 +716,42 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         return (
                           <React.Fragment key={item.id || item.code || idx}>
                             <tr 
-                              className={`sub-section-row ${group.isParentGroup ? 'is-sub-row' : 'is-root-row'} ${st.progress === 100 || st.status === 'mavi_depoda_guncel' ? 'row-completed' : ''} ${isDetailOpen ? 'row-expanded-active' : ''} ${(analyses.length > 0 || hasChildren) ? 'is-clickable' : ''}`}
+                              draggable={true}
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('text/plain', id);
+                                setDraggedItemId(id);
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (draggedItemId && draggedItemId !== id) {
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  const relY = e.clientY - rect.top;
+                                  setDragOverItemId(id);
+                                  setDragOverPos(relY < rect.height / 2 ? 'top' : 'bottom');
+                                }
+                              }}
+                              onDragLeave={() => {
+                                if (dragOverItemId === id) setDragOverItemId(null);
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (draggedItemId && draggedItemId !== id) {
+                                  handleItemReorder(draggedItemId, id, dragOverPos);
+                                }
+                                setDraggedItemId(null);
+                                setDragOverItemId(null);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedItemId(null);
+                                setDragOverItemId(null);
+                              }}
+                              className={`sub-section-row ${group.isParentGroup ? 'is-sub-row' : 'is-root-row'} ${st.progress === 100 || st.status === 'mavi_depoda_guncel' ? 'row-completed' : ''} ${isDetailOpen ? 'row-expanded-active' : ''} ${(analyses.length > 0 || hasChildren) ? 'is-clickable' : ''} ${draggedItemId === id ? 'report-row-is-dragging' : ''} ${dragOverItemId === id ? (dragOverPos === 'top' ? 'report-row-drag-over-top' : 'report-row-drag-over-bottom') : ''}`}
                               onClick={(e) => {
                                 const target = e.target as HTMLElement;
-                                if (target.closest('select, input, textarea, button, a')) return;
+                                if (target.closest('select, input, textarea, button, a, .row-drag-handle')) return;
                                 if (analyses.length > 0) {
                                   toggleDetail(id);
                                 } else if (hasChildren) {
@@ -636,6 +763,9 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               {/* Kod */}
                               <td className="sec-code" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <div style={{ width: `${Math.max(0, (parts.length - 2)) * 20}px`, flexShrink: 0 }} />
+                                <span className="row-drag-handle" title="Başlığı sürükleyerek sırasını değiştirin">
+                                  <GripVertical size={13} />
+                                </span>
                                 <div style={{ width: '20px', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                                   {hasChildren && (
                                     <button
@@ -672,9 +802,6 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               <td className="sec-title-cell">
                                 <div className="sub-title-main">
                                   <span className="sub-title-text">{item.title}</span>
-                                  {item.isCustom && (
-                                    <span className="custom-tag">Özel</span>
-                                  )}
                                   {analyses.length > 0 && (
                                     <span
                                       className={`inline-analysis-count-badge ${isDetailOpen ? 'is-open' : ''}`}
