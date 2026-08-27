@@ -57,45 +57,46 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
       } else {
         // Auto generate next code based on parent and existing codes
         let nextCode = '';
+        const cleanParent = (parentCode || '').trim().replace(/\.+$/, '');
         if (degree === 2) {
           // Parent is chapter (e.g. '2' or '3')
-          const prefix = parentCode ? `${parentCode}.` : '1.';
-          const matching = existingCodes.filter(c => c.startsWith(prefix));
+          const prefix = cleanParent ? `${cleanParent}.` : '1.';
+          const matching = existingCodes.filter(c => c === cleanParent || c.startsWith(prefix));
           let maxIndex = 0;
           matching.forEach(c => {
-            const parts = c.split('.');
-            if (parts.length === 2) {
+            const parts = c.split('.').filter(Boolean);
+            if (parts.length >= 2) {
               const num = parseInt(parts[1], 10);
               if (!isNaN(num) && num > maxIndex) maxIndex = num;
             }
           });
-          nextCode = `${prefix}${maxIndex + 1}`;
+          nextCode = `${cleanParent || '1'}.${maxIndex + 1}`;
         } else if (degree === 3) {
           // Parent is level 2 (e.g. '3.1')
-          const prefix = parentCode ? `${parentCode}.` : '3.1.';
-          const matching = existingCodes.filter(c => c.startsWith(prefix));
+          const prefix = cleanParent ? `${cleanParent}.` : '3.1.';
+          const matching = existingCodes.filter(c => c === cleanParent || c.startsWith(prefix));
           let maxIndex = 0;
           matching.forEach(c => {
-            const parts = c.split('.');
-            if (parts.length === 3) {
+            const parts = c.split('.').filter(Boolean);
+            if (parts.length >= 3) {
               const num = parseInt(parts[2], 10);
               if (!isNaN(num) && num > maxIndex) maxIndex = num;
             }
           });
-          nextCode = `${prefix}${maxIndex + 1}`;
+          nextCode = `${cleanParent || '3.1'}.${maxIndex + 1}`;
         } else if (degree === 4) {
           // Parent is level 3 (e.g. '3.2.1')
-          const prefix = parentCode ? `${parentCode}.` : '3.2.1.';
-          const matching = existingCodes.filter(c => c.startsWith(prefix));
+          const prefix = cleanParent ? `${cleanParent}.` : '3.2.1.';
+          const matching = existingCodes.filter(c => c === cleanParent || c.startsWith(prefix));
           let maxIndex = 0;
           matching.forEach(c => {
-            const parts = c.split('.');
-            if (parts.length === 4) {
+            const parts = c.split('.').filter(Boolean);
+            if (parts.length >= 4) {
               const num = parseInt(parts[3], 10);
               if (!isNaN(num) && num > maxIndex) maxIndex = num;
             }
           });
-          nextCode = `${prefix}${maxIndex + 1}`;
+          nextCode = `${cleanParent || '3.1.1'}.${maxIndex + 1}`;
         }
 
         setFormData({
@@ -231,10 +232,10 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
                   />
                   <span className="form-field-hint">
                     {degree === 2 
-                      ? "2 kademeli ana alt başlık (X.Y)" 
+                      ? "2 kademeli ana başlık (X.Y)" 
                       : degree === 3 
                         ? "3 kademeli hiyerarşi (X.Y.Z)" 
-                        : "4 kademeli alt hiyerarşi (X.Y.Z.W)"}
+                        : "4 kademeli analiz / başlık (X.Y.Z.W)"}
                   </span>
                 </div>
 

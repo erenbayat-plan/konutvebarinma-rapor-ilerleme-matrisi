@@ -29,7 +29,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  const getItemId = (item: ReportItem) => item.id || `konut_${item.code.replace(/\./g, '_')}`;
+  const getItemId = (item: ReportItem) => {
+    if (item.id) return item.id;
+    const prefix = tabName === 'Politika_Yatirim' ? 'pol_' : 'konut_';
+    return `${prefix}${item.code.replace(/\./g, '_')}`;
+  };
 
   const generateCSV = () => {
     const headers = [
@@ -140,7 +144,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     });
 
     const totalPct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
-    summaryText = `GENEL DURUM: %${totalPct} Tamamlandı (${completedItems}/${totalItems} Alt Bölüm)\n` + summaryText;
+    summaryText = `GENEL DURUM: %${totalPct} Tamamlandı (${completedItems}/${totalItems} Bölüm)\n` + summaryText;
 
     navigator.clipboard.writeText(summaryText).then(() => {
       setCopied(true);
