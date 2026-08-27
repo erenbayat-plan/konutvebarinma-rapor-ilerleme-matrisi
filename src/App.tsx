@@ -7,6 +7,7 @@ import {
   SPATIAL_STATUS_KEYS,
   NON_SPATIAL_STATUS_KEYS,
   getStatusLabel,
+  compareHierarchicalCodes,
   ReportStatusType,
   ReportItem, 
   ReportChapterGroup,
@@ -227,49 +228,96 @@ export default function App() {
     );
   };
 
-  const getItemId = (item: ReportItem) => item.id || `konut_${item.code.replace(/\./g, '_')}`;
+  const getItemId = (item: ReportItem, tab: 'mevcut_durum' | 'politika' = activeTab) => {
+    if (item.id) return item.id;
+    const prefix = tab === 'politika' ? 'pol_' : 'konut_';
+    return `${prefix}${item.code.replace(/\./g, '_')}`;
+  };
+
+  const getChapterKey = (tab: 'mevcut_durum' | 'politika', chapterNum: string) => `${tab}_${chapterNum}`;
+
+  const getCustomItemsForChapter = (
+    customsMap: Record<string, CustomSubSection[]>, 
+    tab: 'mevcut_durum' | 'politika', 
+    chapterNum: string
+  ): CustomSubSection[] => {
+    const prefixedKey = `${tab}_${chapterNum}`;
+    if (customsMap[prefixedKey]) return customsMap[prefixedKey];
+    // Backward compatibility: If no tab-prefixed key exists, check un-prefixed key for 'mevcut_durum'
+    if (tab === 'mevcut_durum' && customsMap[chapterNum]) {
+      return customsMap[chapterNum];
+    }
+    return [];
+  };
+
+  const getChapterNote = (
+    notesMap: Record<string, string>, 
+    tab: 'mevcut_durum' | 'politika', 
+    chapterNum: string
+  ): string => {
+    const prefixedKey = `${tab}_${chapterNum}`;
+    if (notesMap[prefixedKey] !== undefined) return notesMap[prefixedKey];
+    if (tab === 'mevcut_durum' && notesMap[chapterNum] !== undefined) {
+      return notesMap[chapterNum];
+    }
+    return '';
+  };
+
+  const getChapterOrder = (
+    ordersMap: Record<string, string[]>, 
+    tab: 'mevcut_durum' | 'politika', 
+    chapterNum: string
+  ): string[] => {
+    const prefixedKey = `${tab}_${chapterNum}`;
+    if (ordersMap[prefixedKey] !== undefined) return ordersMap[prefixedKey];
+    if (tab === 'mevcut_durum' && ordersMap[chapterNum] !== undefined) {
+      return ordersMap[chapterNum];
+    }
+    return [];
+  };
 
   const handleUpdateStatus = (id: string, updates: Partial<ReportStatusItem>) => {
     const current = reportStatus[id] || { status: 'not_started', progress: 0, author: '', targetPages: '', note: '', driveLink: '' };
     const updated = { ...reportStatus, [id]: { ...current, ...updates } };
     setReportStatus(updated);
-    triggerCloudSync(updated, analysisStatuses, customItems, chapterNotes, sectionOverrides);
+    triggerCloudSync(updated, analysisStatuses, customItems, chapterNotes, sectionOverrides, chapterOrders);
   };
 
   const handleUpdateAnalysisStatus = (analysisId: string, status: 'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede') => {
     const updatedAnalysis = { ...analysisStatuses, [analysisId]: status };
     setAnalysisStatuses(updatedAnalysis);
 
-    // Find parent report item that contains this analysis
     let parentItem: ReportItem | null = null;
-    for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+    let parentReportKey: 'mevcut_durum' | 'politika' = activeTab;
+
+    // Search active report first
+    for (const ch of currentChapters) {
       for (const it of ch.items) {
         const itemAnalyses = sectionOverrides[it.id]?.analizler || it.analizler || [];
         if (itemAnalyses.some(a => a.id === analysisId)) {
-          parentItem = {
-            ...it,
-            analizler: itemAnalyses
-          };
+          parentItem = { ...it, analizler: itemAnalyses };
+          parentReportKey = activeTab;
           break;
         }
       }
       if (parentItem) break;
     }
 
-    // Check custom items
+    // Search active report custom items
     if (!parentItem) {
-      for (const chNum of Object.keys(customItems)) {
-        const list = customItems[chNum] || [];
+      for (const ch of currentChapters) {
+        const list = getCustomItemsForChapter(customItems, activeTab, ch.num);
         for (const sub of list) {
           if (sub.analizler && sub.analizler.some(a => a.id === analysisId)) {
             parentItem = {
-              id: `custom_${sub.id}`,
+              id: sub.id,
               level1: '',
-              level1Num: chNum,
+              level1Num: ch.num,
               code: sub.code,
               title: sub.title,
               analizler: sub.analizler
             };
+            parentReportKey = activeTab;
             break;
           }
         }
@@ -277,10 +325,47 @@ export default function App() {
       }
     }
 
+    // Fallback: search other report
+    if (!parentItem) {
+      const otherTab = activeTab === 'mevcut_durum' ? 'politika' : 'mevcut_durum';
+      const otherChapters = activeTab === 'mevcut_durum' ? POLITIKA_YATIRIM_CHAPTERS : KONUT_BARINMA_CHAPTERS;
+      for (const ch of otherChapters) {
+        for (const it of ch.items) {
+          const itemAnalyses = sectionOverrides[it.id]?.analizler || it.analizler || [];
+          if (itemAnalyses.some(a => a.id === analysisId)) {
+            parentItem = { ...it, analizler: itemAnalyses };
+            parentReportKey = otherTab;
+            break;
+          }
+        }
+        if (parentItem) break;
+      }
+      if (!parentItem) {
+        for (const ch of otherChapters) {
+          const list = getCustomItemsForChapter(customItems, otherTab, ch.num);
+          for (const sub of list) {
+            if (sub.analizler && sub.analizler.some(a => a.id === analysisId)) {
+              parentItem = {
+                id: sub.id,
+                level1: '',
+                level1Num: ch.num,
+                code: sub.code,
+                title: sub.title,
+                analizler: sub.analizler
+              };
+              parentReportKey = otherTab;
+              break;
+            }
+          }
+          if (parentItem) break;
+        }
+      }
+    }
+
     let nextReportStatus = reportStatus;
 
     if (parentItem && parentItem.analizler && parentItem.analizler.length > 0) {
-      const parentId = getItemId(parentItem);
+      const parentId = getItemId(parentItem, parentReportKey);
       const currentParent = reportStatus[parentId];
       const auto = computeAutoStatusForAnalyses(parentItem.analizler, updatedAnalysis);
 
@@ -308,7 +393,7 @@ export default function App() {
       }
     }
 
-    triggerCloudSync(nextReportStatus, updatedAnalysis, customItems, chapterNotes, sectionOverrides);
+    triggerCloudSync(nextReportStatus, updatedAnalysis, customItems, chapterNotes, sectionOverrides, chapterOrders);
   };
 
   // --- Headings Actions (2nd, 3rd, and 4th Degree) ---
@@ -337,8 +422,11 @@ export default function App() {
       level4 = `${formData.code} ${formData.title}`;
     }
 
+    const idPrefix = activeTab === 'politika' ? 'pol_' : 'konut_';
+    const newSubId = `${idPrefix}custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
     const newSub: CustomSubSection = {
-      id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: newSubId,
       chapterNum,
       code: formData.code,
       title: formData.title,
@@ -351,54 +439,62 @@ export default function App() {
       analizler: []
     };
 
-    const currentList = customItems[chapterNum] || [];
-    const updatedCustoms = { ...customItems, [chapterNum]: [...currentList, newSub] };
+    const chapterKey = getChapterKey(activeTab, chapterNum);
+    const currentList = getCustomItemsForChapter(customItems, activeTab, chapterNum);
+    const updatedCustomsList = [...currentList, newSub].sort((a, b) => compareHierarchicalCodes(a.code, b.code));
+    const updatedCustoms = { ...customItems, [chapterKey]: updatedCustomsList };
     setCustomItems(updatedCustoms);
 
-    const id = `konut_${formData.code.replace(/\./g, '_')}`;
+    const statusId = `${idPrefix}${formData.code.replace(/\./g, '_')}`;
+    const initialStatus: ReportStatusItem = {
+      status: 'baslanmadi' as ReportStatusType,
+      progress: 0,
+      author: '',
+      targetPages: formData.defaultPages || '8-10 sf',
+      note: '',
+      driveLink: ''
+    };
+
     const updatedReport = {
       ...reportStatus,
-      [id]: {
-        status: 'baslanmadi' as ReportStatusType,
-        progress: 0,
-        author: '',
-        targetPages: formData.defaultPages || '8-10 sf',
-        note: '',
-        driveLink: ''
-      }
+      [statusId]: initialStatus,
+      [newSubId]: initialStatus
     };
     setReportStatus(updatedReport);
 
-    triggerCloudSync(updatedReport, analysisStatuses, updatedCustoms, chapterNotes, sectionOverrides);
+    triggerCloudSync(updatedReport, analysisStatuses, updatedCustoms, chapterNotes, sectionOverrides, chapterOrders);
   };
 
   const handleEditSubSection = (
     item: ReportItem & { customId?: string; isCustom?: boolean },
     updates: HeadingFormData
   ) => {
-    const oldId = getItemId(item);
-    const newId = `konut_${updates.code.replace(/\./g, '_')}`;
+    const oldId = getItemId(item, activeTab);
+    const idPrefix = activeTab === 'politika' ? 'pol_' : 'konut_';
+    const newId = `${idPrefix}${updates.code.replace(/\./g, '_')}`;
 
     let nextCustoms = customItems;
     let nextOverrides = sectionOverrides;
     const nextReport = { ...reportStatus };
 
     if (item.isCustom && item.customId) {
-      const nextList: Record<string, CustomSubSection[]> = {};
-      Object.keys(customItems).forEach(chNum => {
-        nextList[chNum] = (customItems[chNum] || []).map(sub => {
-          if (sub.id === item.customId) {
-            return {
-              ...sub,
-              code: updates.code,
-              title: updates.title,
-              defaultPages: updates.defaultPages || sub.defaultPages,
-              scope: updates.icerikOzeti !== undefined ? updates.icerikOzeti : sub.scope,
-              sartnameUyum: updates.sartnameUyum !== undefined ? updates.sartnameUyum : sub.sartnameUyum
-            };
-          }
-          return sub;
-        });
+      const nextList: Record<string, CustomSubSection[]> = { ...customItems };
+      const currentChapterNum = item.level1Num || '1';
+      const chapterKey = getChapterKey(activeTab, currentChapterNum);
+      const currentItems = getCustomItemsForChapter(customItems, activeTab, currentChapterNum);
+
+      nextList[chapterKey] = currentItems.map(sub => {
+        if (sub.id === item.customId) {
+          return {
+            ...sub,
+            code: updates.code,
+            title: updates.title,
+            defaultPages: updates.defaultPages || sub.defaultPages,
+            scope: updates.icerikOzeti !== undefined ? updates.icerikOzeti : sub.scope,
+            sartnameUyum: updates.sartnameUyum !== undefined ? updates.sartnameUyum : sub.sartnameUyum
+          };
+        }
+        return sub;
       });
       nextCustoms = nextList;
       setCustomItems(nextCustoms);
@@ -427,7 +523,7 @@ export default function App() {
       setReportStatus(nextReport);
     }
 
-    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   const handleEditSubSectionGroup = (
@@ -438,13 +534,15 @@ export default function App() {
     const nextCustoms = { ...customItems };
     const nextOverrides = { ...sectionOverrides };
     const nextReport = { ...reportStatus };
+    const idPrefix = activeTab === 'politika' ? 'pol_' : 'konut_';
+    const chapterKey = getChapterKey(activeTab, chapterNum);
 
-    // Update custom items belonging to this group
-    const currentCustoms = nextCustoms[chapterNum] || [];
-    nextCustoms[chapterNum] = currentCustoms.map(sub => {
+    // Update custom items belonging to this group in active report
+    const currentCustoms = getCustomItemsForChapter(customItems, activeTab, chapterNum);
+    nextCustoms[chapterKey] = currentCustoms.map(sub => {
       if (sub.code === groupCode) {
-        const oldId = `konut_${sub.code.replace(/\./g, '_')}`;
-        const newId = `konut_${updates.code.replace(/\./g, '_')}`;
+        const oldId = `${idPrefix}${sub.code.replace(/\./g, '_')}`;
+        const newId = `${idPrefix}${updates.code.replace(/\./g, '_')}`;
         if (oldId !== newId && nextReport[oldId]) {
           nextReport[newId] = nextReport[oldId];
           delete nextReport[oldId];
@@ -460,8 +558,8 @@ export default function App() {
         const newSubCode = updates.code !== groupCode 
           ? sub.code.replace(new RegExp('^' + groupCode.replace(/\./g, '\\.')), updates.code)
           : sub.code;
-        const oldId = `konut_${sub.code.replace(/\./g, '_')}`;
-        const newId = `konut_${newSubCode.replace(/\./g, '_')}`;
+        const oldId = `${idPrefix}${sub.code.replace(/\./g, '_')}`;
+        const newId = `${idPrefix}${newSubCode.replace(/\./g, '_')}`;
         if (oldId !== newId && nextReport[oldId]) {
           nextReport[newId] = nextReport[oldId];
           delete nextReport[oldId];
@@ -475,12 +573,13 @@ export default function App() {
       return sub;
     });
 
-    // Update default items in static chapters
-    for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+    // Update default items ONLY in the active report's chapters
+    for (const ch of currentChapters) {
+      if (ch.num !== chapterNum) continue;
       for (const it of ch.items) {
         if (it.code === groupCode) {
-          const oldId = getItemId(it);
-          const newId = `konut_${updates.code.replace(/\./g, '_')}`;
+          const oldId = getItemId(it, activeTab);
+          const newId = `${idPrefix}${updates.code.replace(/\./g, '_')}`;
           if (oldId !== newId && nextReport[oldId]) {
             nextReport[newId] = nextReport[oldId];
             delete nextReport[oldId];
@@ -495,8 +594,8 @@ export default function App() {
           const newItCode = updates.code !== groupCode 
             ? it.code.replace(new RegExp('^' + groupCode.replace(/\./g, '\\.')), updates.code)
             : it.code;
-          const oldId = getItemId(it);
-          const newId = `konut_${newItCode.replace(/\./g, '_')}`;
+          const oldId = getItemId(it, activeTab);
+          const newId = `${idPrefix}${newItCode.replace(/\./g, '_')}`;
           if (oldId !== newId && nextReport[oldId]) {
             nextReport[newId] = nextReport[oldId];
             delete nextReport[oldId];
@@ -513,24 +612,26 @@ export default function App() {
     setCustomItems(nextCustoms);
     setSectionOverrides(nextOverrides);
     setReportStatus(nextReport);
-    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   const handleDeleteSubSection = (
     item: ReportItem & { customId?: string; isCustom?: boolean }
   ) => {
-    const oldId = getItemId(item);
+    const oldId = getItemId(item, activeTab);
     let nextCustoms = customItems;
     let nextOverrides = sectionOverrides;
     const nextReport = { ...reportStatus };
 
     if (item.isCustom && item.customId) {
-      const nextList: Record<string, CustomSubSection[]> = {};
-      Object.keys(customItems).forEach(chNum => {
-        nextList[chNum] = (customItems[chNum] || []).filter(
-          sub => sub.id !== item.customId && !sub.code.startsWith(item.code + '.')
-        );
-      });
+      const nextList: Record<string, CustomSubSection[]> = { ...customItems };
+      const currentChapterNum = item.level1Num || '1';
+      const chapterKey = getChapterKey(activeTab, currentChapterNum);
+      const currentItems = getCustomItemsForChapter(customItems, activeTab, currentChapterNum);
+
+      nextList[chapterKey] = currentItems.filter(
+        sub => sub.id !== item.customId && !sub.code.startsWith(item.code + '.')
+      );
       nextCustoms = nextList;
       setCustomItems(nextCustoms);
     } else {
@@ -541,8 +642,8 @@ export default function App() {
           deleted: true
         }
       };
-      // Mark child items as deleted
-      for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+      // Mark child items in active report as deleted
+      for (const ch of currentChapters) {
         for (const it of ch.items) {
           if (it.code.startsWith(item.code + '.') && it.code !== item.code) {
             nextOverrides[it.id] = {
@@ -556,9 +657,10 @@ export default function App() {
     }
 
     delete nextReport[oldId];
+    if (item.customId) delete nextReport[item.customId];
     setReportStatus(nextReport);
 
-    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   const handleDeleteSubSectionGroup = (
@@ -568,27 +670,31 @@ export default function App() {
     const nextCustoms = { ...customItems };
     const nextOverrides = { ...sectionOverrides };
     const nextReport = { ...reportStatus };
+    const idPrefix = activeTab === 'politika' ? 'pol_' : 'konut_';
+    const chapterKey = getChapterKey(activeTab, chapterNum);
 
-    // Remove from customs
-    const currentCustoms = nextCustoms[chapterNum] || [];
-    nextCustoms[chapterNum] = currentCustoms.filter(sub => {
+    // Remove from customs in active report
+    const currentCustoms = getCustomItemsForChapter(customItems, activeTab, chapterNum);
+    nextCustoms[chapterKey] = currentCustoms.filter(sub => {
       const isMatch = sub.code === groupCode || sub.code.startsWith(groupCode + '.');
       if (isMatch) {
-        const id = `konut_${sub.code.replace(/\./g, '_')}`;
+        const id = `${idPrefix}${sub.code.replace(/\./g, '_')}`;
         delete nextReport[id];
+        delete nextReport[sub.id];
       }
       return !isMatch;
     });
 
-    // Mark deleted in overrides
-    for (const ch of [...KONUT_BARINMA_CHAPTERS, ...POLITIKA_YATIRIM_CHAPTERS]) {
+    // Mark deleted in overrides ONLY for active report
+    for (const ch of currentChapters) {
+      if (ch.num !== chapterNum) continue;
       for (const it of ch.items) {
         if (it.code === groupCode || it.code.startsWith(groupCode + '.')) {
           nextOverrides[it.id] = {
             ...nextOverrides[it.id],
             deleted: true
           };
-          const id = getItemId(it);
+          const id = getItemId(it, activeTab);
           delete nextReport[id];
         }
       }
@@ -597,7 +703,7 @@ export default function App() {
     setCustomItems(nextCustoms);
     setSectionOverrides(nextOverrides);
     setReportStatus(nextReport);
-    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReport, analysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   // --- Spatial Analyses Actions ---
@@ -627,14 +733,16 @@ export default function App() {
     let nextOverrides = sectionOverrides;
 
     if (item.isCustom && item.customId) {
-      const nextList: Record<string, CustomSubSection[]> = {};
-      Object.keys(customItems).forEach(chNum => {
-        nextList[chNum] = (customItems[chNum] || []).map(sub => {
-          if (sub.id === item.customId) {
-            return { ...sub, analizler: updatedAnalyses };
-          }
-          return sub;
-        });
+      const nextList: Record<string, CustomSubSection[]> = { ...customItems };
+      const currentChapterNum = item.level1Num || '1';
+      const chapterKey = getChapterKey(activeTab, currentChapterNum);
+      const currentItems = getCustomItemsForChapter(customItems, activeTab, currentChapterNum);
+
+      nextList[chapterKey] = currentItems.map(sub => {
+        if (sub.id === item.customId) {
+          return { ...sub, analizler: updatedAnalyses };
+        }
+        return sub;
       });
       nextCustoms = nextList;
       setCustomItems(nextCustoms);
@@ -650,7 +758,7 @@ export default function App() {
     }
 
     // Recalculate parent auto-status
-    const parentId = getItemId(item);
+    const parentId = getItemId(item, activeTab);
     const auto = computeAutoStatusForAnalyses(updatedAnalyses, nextAnalysisStatuses);
     const currentParent = reportStatus[parentId];
     const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
@@ -668,7 +776,7 @@ export default function App() {
       setReportStatus(nextReportStatus);
     }
 
-    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   const handleEditAnalysis = (
@@ -698,14 +806,16 @@ export default function App() {
     let nextOverrides = sectionOverrides;
 
     if (item.isCustom && item.customId) {
-      const nextList: Record<string, CustomSubSection[]> = {};
-      Object.keys(customItems).forEach(chNum => {
-        nextList[chNum] = (customItems[chNum] || []).map(sub => {
-          if (sub.id === item.customId) {
-            return { ...sub, analizler: updatedAnalyses };
-          }
-          return sub;
-        });
+      const nextList: Record<string, CustomSubSection[]> = { ...customItems };
+      const currentChapterNum = item.level1Num || '1';
+      const chapterKey = getChapterKey(activeTab, currentChapterNum);
+      const currentItems = getCustomItemsForChapter(customItems, activeTab, currentChapterNum);
+
+      nextList[chapterKey] = currentItems.map(sub => {
+        if (sub.id === item.customId) {
+          return { ...sub, analizler: updatedAnalyses };
+        }
+        return sub;
       });
       nextCustoms = nextList;
       setCustomItems(nextCustoms);
@@ -721,7 +831,7 @@ export default function App() {
     }
 
     // Recalculate parent auto-status
-    const parentId = getItemId(item);
+    const parentId = getItemId(item, activeTab);
     const auto = computeAutoStatusForAnalyses(updatedAnalyses, nextAnalysisStatuses);
     const currentParent = reportStatus[parentId];
     const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
@@ -739,7 +849,7 @@ export default function App() {
       setReportStatus(nextReportStatus);
     }
 
-    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   const handleDeleteAnalysis = (
@@ -756,14 +866,16 @@ export default function App() {
     let nextOverrides = sectionOverrides;
 
     if (item.isCustom && item.customId) {
-      const nextList: Record<string, CustomSubSection[]> = {};
-      Object.keys(customItems).forEach(chNum => {
-        nextList[chNum] = (customItems[chNum] || []).map(sub => {
-          if (sub.id === item.customId) {
-            return { ...sub, analizler: updatedAnalyses };
-          }
-          return sub;
-        });
+      const nextList: Record<string, CustomSubSection[]> = { ...customItems };
+      const currentChapterNum = item.level1Num || '1';
+      const chapterKey = getChapterKey(activeTab, currentChapterNum);
+      const currentItems = getCustomItemsForChapter(customItems, activeTab, currentChapterNum);
+
+      nextList[chapterKey] = currentItems.map(sub => {
+        if (sub.id === item.customId) {
+          return { ...sub, analizler: updatedAnalyses };
+        }
+        return sub;
       });
       nextCustoms = nextList;
       setCustomItems(nextCustoms);
@@ -779,7 +891,7 @@ export default function App() {
     }
 
     // Recalculate parent auto-status
-    const parentId = getItemId(item);
+    const parentId = getItemId(item, activeTab);
     const auto = computeAutoStatusForAnalyses(updatedAnalyses, nextAnalysisStatuses);
     const currentParent = reportStatus[parentId];
     const currentProg = currentParent?.progress ?? (STATUS_PROGRESS_MAP[currentParent?.status as ReportStatusType] ?? 0);
@@ -797,17 +909,19 @@ export default function App() {
       setReportStatus(nextReportStatus);
     }
 
-    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides);
+    triggerCloudSync(nextReportStatus, nextAnalysisStatuses, nextCustoms, chapterNotes, nextOverrides, chapterOrders);
   };
 
   const handleUpdateChapterNotes = (chapterNum: string, note: string) => {
-    const updatedNotes = { ...chapterNotes, [chapterNum]: note };
+    const chapterKey = getChapterKey(activeTab, chapterNum);
+    const updatedNotes = { ...chapterNotes, [chapterKey]: note };
     setChapterNotes(updatedNotes);
-    triggerCloudSync(reportStatus, analysisStatuses, customItems, updatedNotes, sectionOverrides);
+    triggerCloudSync(reportStatus, analysisStatuses, customItems, updatedNotes, sectionOverrides, chapterOrders);
   };
 
   const handleReorderItems = (chapterNum: string, newOrder: string[]) => {
-    const nextOrders = { ...chapterOrders, [chapterNum]: newOrder };
+    const chapterKey = getChapterKey(activeTab, chapterNum);
+    const nextOrders = { ...chapterOrders, [chapterKey]: newOrder };
     setChapterOrders(nextOrders);
     triggerCloudSync(reportStatus, analysisStatuses, customItems, chapterNotes, sectionOverrides, nextOrders);
   };
@@ -830,23 +944,31 @@ export default function App() {
     triggerCloudSync({}, {}, {}, {}, {}, {});
   };
 
-  const handleToggleCollapse = (chapterNum: string) => {
+  const handleToggleCollapse = (chapterKey: string) => {
     setCollapsedChapters(prev => ({
       ...prev,
-      [chapterNum]: !prev[chapterNum]
+      [chapterKey]: !prev[chapterKey]
     }));
   };
 
   const handleExpandAll = () => {
-    setCollapsedChapters({});
+    setCollapsedChapters(prev => {
+      const next = { ...prev };
+      currentChapters.forEach(ch => {
+        delete next[`${activeTab}_${ch.num}`];
+      });
+      return next;
+    });
   };
 
   const handleCollapseAll = () => {
-    const all: Record<string, boolean> = {};
-    currentChapters.forEach(ch => {
-      all[ch.num] = true;
+    setCollapsedChapters(prev => {
+      const next = { ...prev };
+      currentChapters.forEach(ch => {
+        next[`${activeTab}_${ch.num}`] = true;
+      });
+      return next;
     });
-    setCollapsedChapters(all);
   };
 
   // Distinct authors list for filter
@@ -861,7 +983,7 @@ export default function App() {
   }, [reportStatus]);
 
   // Dynamic calculation for Stats
-  const calculateStatsForChapters = (chapters: ReportChapterGroup[]) => {
+  const calculateStatsForChapters = (chapters: ReportChapterGroup[], tab: 'mevcut_durum' | 'politika') => {
     let total = 0;
     let maviDepodaGuncel = 0;
     let maviDepoyaGidebilir = 0;
@@ -897,12 +1019,12 @@ export default function App() {
         };
       }).filter(Boolean) as ReportItem[];
 
-      const customs = customItems[ch.num] || [];
+      const customs = getCustomItemsForChapter(customItems, tab, ch.num);
       
       const allItems: ReportItem[] = [
         ...defaultItems,
         ...customs.map(c => ({
-          id: `custom_${c.id}`,
+          id: c.id,
           level1: `${ch.num}. ${ch.title}`,
           level1Num: ch.num,
           level2: c.level2,
@@ -913,9 +1035,10 @@ export default function App() {
           sartnameUyum: c.sartnameUyum,
           icerikOzeti: c.scope,
           defaultPages: c.defaultPages || '8-10 sf',
-          analizler: c.analizler || []
+          analizler: c.analizler || [],
+          defaultStatus: 'baslanmadi' as ReportStatusType
         }))
-      ];
+      ].sort((a, b) => compareHierarchicalCodes(a.code, b.code));
 
       const getItemStatusAndProgress = (item: ReportItem): { status: ReportStatusType; progress: number } => {
         const children = allItems.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
@@ -954,7 +1077,7 @@ export default function App() {
           };
         }
 
-        const id = getItemId(item);
+        const id = getItemId(item, tab);
         const rawStatus = reportStatus[id];
         if (rawStatus) {
           return {
@@ -977,7 +1100,7 @@ export default function App() {
 
       allItems.forEach(item => {
         total++;
-        const id = getItemId(item);
+        const id = getItemId(item, tab);
         const itemState = reportStatus[id] || { author: '', targetPages: item.defaultPages || '', note: '', driveLink: '' };
         
         const { status: itemStatusType, progress: itemProgress } = getItemStatusAndProgress(item);
@@ -1054,11 +1177,11 @@ export default function App() {
   };
 
   const mevcutStats = useMemo(() => {
-    return calculateStatsForChapters(KONUT_BARINMA_CHAPTERS);
+    return calculateStatsForChapters(KONUT_BARINMA_CHAPTERS, 'mevcut_durum');
   }, [reportStatus, analysisStatuses, customItems, sectionOverrides, distinctAuthors]);
 
   const politikaStats = useMemo(() => {
-    return calculateStatsForChapters(POLITIKA_YATIRIM_CHAPTERS);
+    return calculateStatsForChapters(POLITIKA_YATIRIM_CHAPTERS, 'politika');
   }, [reportStatus, analysisStatuses, customItems, sectionOverrides, distinctAuthors]);
 
   const overallStats = activeTab === 'mevcut_durum' ? mevcutStats : politikaStats;
@@ -1085,8 +1208,8 @@ export default function App() {
         };
       }).filter(Boolean) as (ReportItem & { isCustom?: boolean; customId?: string })[];
 
-      const customs = (customItems[ch.num] || []).map(s => ({
-        id: `custom_${s.id}`,
+      const customs = getCustomItemsForChapter(customItems, activeTab, ch.num).map(s => ({
+        id: s.id,
         level1: `${ch.num}. ${ch.title}`,
         level1Num: ch.num,
         level2: s.level2,
@@ -1099,15 +1222,16 @@ export default function App() {
         defaultPages: s.defaultPages || '8-10 sf',
         analizler: s.analizler || [],
         isCustom: true,
-        customId: s.id
+        customId: s.id,
+        defaultStatus: 'baslanmadi' as ReportStatusType
       }));
 
-      let allItems = [...defaultItems, ...customs];
+      let allItems = [...defaultItems, ...customs].sort((a, b) => compareHierarchicalCodes(a.code, b.code));
 
       if (searchTerm) {
         const sLower = searchTerm.toLowerCase();
         allItems = allItems.filter(item => {
-          const id = getItemId(item);
+          const id = getItemId(item, activeTab);
           const st = reportStatus[id] || { author: '', note: '', driveLink: '' };
           const analysesMatches = (item.analizler || []).some(a => a.name.toLowerCase().includes(sLower) || (a.category && a.category.toLowerCase().includes(sLower)));
           return (
@@ -1128,7 +1252,7 @@ export default function App() {
 
       if (statusFilter !== 'all') {
         allItems = allItems.filter(item => {
-          const id = getItemId(item);
+          const id = getItemId(item, activeTab);
           const rawStatus = reportStatus[id];
           let currentSt: ReportStatusType;
           if (rawStatus) {
@@ -1144,7 +1268,7 @@ export default function App() {
 
       if (authorFilter !== 'all') {
         allItems = allItems.filter(item => {
-          const id = getItemId(item);
+          const id = getItemId(item, activeTab);
           const st = reportStatus[id] || { author: '' };
           return (st.author || '').trim().toLowerCase() === authorFilter.toLowerCase();
         });
@@ -1177,6 +1301,22 @@ export default function App() {
       };
     }).filter(Boolean) as { chapter: ReportChapterGroup; items: (ReportItem & { isCustom?: boolean; customId?: string })[] }[];
   }, [activeTab, currentChapters, selectedChapterFilter, customItems, sectionOverrides, searchTerm, statusFilter, authorFilter, analysisFilter, reportStatus, analysisStatuses]);
+
+  const activeCustomSubSections = useMemo(() => {
+    const result: Record<string, CustomSubSection[]> = {};
+    currentChapters.forEach(ch => {
+      result[ch.num] = getCustomItemsForChapter(customItems, activeTab, ch.num);
+    });
+    return result;
+  }, [customItems, activeTab, currentChapters]);
+
+  const activeChapterNotes = useMemo(() => {
+    const result: Record<string, string> = {};
+    currentChapters.forEach(ch => {
+      result[ch.num] = getChapterNote(chapterNotes, activeTab, ch.num);
+    });
+    return result;
+  }, [chapterNotes, activeTab, currentChapters]);
 
   return (
     <div className="portal-container" id="konut-portal-app">
@@ -1359,15 +1499,16 @@ export default function App() {
           ) : (
             filteredChapters.map(({ chapter, items }) => (
               <ChapterCard
-                key={chapter.num}
+                key={`${activeTab}_${chapter.num}`}
+                reportKey={activeTab}
                 chapter={chapter}
                 items={items}
-                chapterOrder={chapterOrders[chapter.num] || []}
+                chapterOrder={getChapterOrder(chapterOrders, activeTab, chapter.num)}
                 reportStatus={reportStatus}
                 analysisStatuses={analysisStatuses}
-                chapterNotes={chapterNotes[chapter.num] || ''}
-                isCollapsed={!!collapsedChapters[chapter.num]}
-                onToggleCollapse={handleToggleCollapse}
+                chapterNotes={getChapterNote(chapterNotes, activeTab, chapter.num)}
+                isCollapsed={!!collapsedChapters[`${activeTab}_${chapter.num}`]}
+                onToggleCollapse={(num) => handleToggleCollapse(`${activeTab}_${num}`)}
                 onUpdateStatus={handleUpdateStatus}
                 onUpdateAnalysisStatus={handleUpdateAnalysisStatus}
                 onAddSubSection={handleAddSubSection}
@@ -1392,8 +1533,8 @@ export default function App() {
         onClose={() => setIsExportOpen(false)}
         reportStatus={reportStatus}
         analysisStatuses={analysisStatuses}
-        chapterNotes={chapterNotes}
-        customSubSections={customItems}
+        chapterNotes={activeChapterNotes}
+        customSubSections={activeCustomSubSections}
         onResetAll={handleResetAll}
         chapters={currentChapters}
         tabName={activeTab === 'mevcut_durum' ? 'Mevcut_Durum' : 'Politika_Yatirim'}

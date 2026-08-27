@@ -6,7 +6,8 @@ import {
   computeAutoStatusForAnalyses,
   SPATIAL_STATUS_KEYS,
   NON_SPATIAL_STATUS_KEYS,
-  getStatusLabel
+  getStatusLabel,
+  compareHierarchicalCodes
 } from '../reportData';
 import type { ReportStatusItem } from '../syncService';
 import { HeadingModal, HeadingFormData } from './HeadingModal';
@@ -14,6 +15,7 @@ import { AnalysisModal } from './AnalysisModal';
 import { ConfirmModal } from './ConfirmModal';
 
 interface ChapterCardProps {
+  reportKey?: 'mevcut_durum' | 'politika';
   chapter: ReportChapterGroup;
   items: (ReportItem & { customId?: string; isCustom?: boolean })[];
   chapterOrder?: string[];
@@ -64,6 +66,7 @@ interface ChapterCardProps {
 }
 
 export const ChapterCard: React.FC<ChapterCardProps> = ({
+  reportKey = 'mevcut_durum',
   chapter,
   items,
   chapterOrder,
@@ -140,25 +143,30 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
     onConfirm: () => {}
   });
 
-  const getItemId = (item: ReportItem) => item.id || `konut_${item.code.replace(/\./g, '_')}`;
+  const getItemId = (item: ReportItem) => item.id || `${reportKey === 'politika' ? 'pol_' : 'konut_'}${item.code.replace(/\./g, '_')}`;
 
   const getHeadingDegree = (code: string): number => {
     return code.split('.').filter(Boolean).length;
   };
 
-  // Sorted items based on chapterOrder
+  // Sorted items based on hierarchical code, respecting manual order when present
   const sortedItems = useMemo(() => {
-    if (!chapterOrder || chapterOrder.length === 0) return items;
+    const baseSorted = [...items].sort((a, b) => compareHierarchicalCodes(a.code, b.code));
+    if (!chapterOrder || chapterOrder.length === 0) return baseSorted;
     const orderMap = new Map<string, number>();
     chapterOrder.forEach((id, idx) => orderMap.set(id, idx));
 
-    return [...items].sort((a, b) => {
+    return baseSorted.sort((a, b) => {
       const keyA = getItemId(a);
       const keyB = getItemId(b);
-      const idxA = orderMap.has(keyA) ? orderMap.get(keyA)! : 9999;
-      const idxB = orderMap.has(keyB) ? orderMap.get(keyB)! : 9999;
-      if (idxA !== idxB) return idxA - idxB;
-      return 0;
+      const hasA = orderMap.has(keyA);
+      const hasB = orderMap.has(keyB);
+      if (hasA && hasB) {
+        return orderMap.get(keyA)! - orderMap.get(keyB)!;
+      }
+      if (hasA && !hasB) return -1;
+      if (!hasA && hasB) return 1;
+      return compareHierarchicalCodes(a.code, b.code);
     });
   }, [items, chapterOrder]);
 
@@ -292,13 +300,19 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
       groupsMap.get(groupKey)!.items.push(item);
     });
 
-    return Array.from(groupsMap.values()).map(g => {
+    const groups = Array.from(groupsMap.values()).map(g => {
+      // Ensure all items inside this group are sorted strictly by hierarchical code
+      g.items.sort((a, b) => compareHierarchicalCodes(a.code, b.code));
       const isParentGroup = g.items.length > 1 || (g.items.length === 1 && g.items[0].code !== g.groupCode);
       return {
         ...g,
         isParentGroup
       };
     });
+
+    // Ensure all 2nd level groups are sorted strictly by hierarchical code
+    groups.sort((a, b) => compareHierarchicalCodes(a.groupCode, b.groupCode));
+    return groups;
   }, [sortedItems]);
 
   const toggleDetail = (id: string) => {
@@ -689,7 +703,9 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                       )}
 
                       {/* Alt Başlık Satırları (2., 3. ve 4. Düzey) */}
-                      {(!group.isParentGroup || !isGroupCollapsed) && group.items.map((item, idx) => {
+                      {(!group.isParentGroup || !isGroupCollapsed) && group.items
+                        .filter(item => !group.isParentGroup || item.code !== group.groupCode)
+                        .map((item, idx) => {
                         const id = getItemId(item);
                         const st = getStatus(item);
                         const isDetailOpen = !!expandedDetails[id];
