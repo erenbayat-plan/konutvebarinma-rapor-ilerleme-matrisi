@@ -149,63 +149,18 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   // Sorted items based on chapterOrder
   const sortedItems = useMemo(() => {
     if (!chapterOrder || chapterOrder.length === 0) return items;
-
-    const defaultOrder = new Map<string, number>();
-    items.forEach((item, idx) => {
-      defaultOrder.set(getItemId(item), idx);
-    });
-
-    const existingOrderIds = chapterOrder.filter(id => defaultOrder.has(id));
-    const missingIds = items
-      .map(item => getItemId(item))
-      .filter(id => !existingOrderIds.includes(id));
-
-    if (missingIds.length === 0) {
-      const orderMap = new Map<string, number>();
-      existingOrderIds.forEach((id, idx) => orderMap.set(id, idx));
-      return [...items].sort((a, b) => {
-        const keyA = getItemId(a);
-        const keyB = getItemId(b);
-        return (orderMap.get(keyA) ?? 9999) - (orderMap.get(keyB) ?? 9999);
-      });
-    }
-
-    const healedOrder = [...existingOrderIds];
-    const sortedMissingIds = [...missingIds].sort((a, b) => (defaultOrder.get(a) ?? 0) - (defaultOrder.get(b) ?? 0));
-
-    sortedMissingIds.forEach(id => {
-      const naturalIdx = defaultOrder.get(id)!;
-      let insertIdx = -1;
-      for (let i = naturalIdx + 1; i < items.length; i++) {
-        const nextId = getItemId(items[i]);
-        const indexInHealed = healedOrder.indexOf(nextId);
-        if (indexInHealed !== -1) {
-          insertIdx = indexInHealed;
-          break;
-        }
-      }
-      if (insertIdx !== -1) {
-        healedOrder.splice(insertIdx, 0, id);
-      } else {
-        healedOrder.push(id);
-      }
-    });
-
     const orderMap = new Map<string, number>();
-    healedOrder.forEach((id, idx) => orderMap.set(id, idx));
+    chapterOrder.forEach((id, idx) => orderMap.set(id, idx));
 
     return [...items].sort((a, b) => {
       const keyA = getItemId(a);
       const keyB = getItemId(b);
-      return (orderMap.get(keyA) ?? 9999) - (orderMap.get(keyB) ?? 9999);
+      const idxA = orderMap.has(keyA) ? orderMap.get(keyA)! : 9999;
+      const idxB = orderMap.has(keyB) ? orderMap.get(keyB)! : 9999;
+      if (idxA !== idxB) return idxA - idxB;
+      return 0;
     });
   }, [items, chapterOrder]);
-
-  const isLeafAnalysis = (item: ReportItem): boolean => {
-    const deg = getHeadingDegree(item.code);
-    const hasChildren = sortedItems.some(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
-    return deg === 4 || (deg === 3 && !hasChildren && chapter.num === '3');
-  };
 
   const getStatus = (item: ReportItem): ReportStatusItem => {
     const children = sortedItems.filter(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
@@ -227,7 +182,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
       const progress = count > 0 ? Math.round(sumProgress / count) : 0;
       const id = getItemId(item);
       const saved = reportStatus[id] || {};
-      const isSpatial = (item.analizler && item.analizler.length > 0) || targets.some(c => (c.analizler && c.analizler.length > 0) || isLeafAnalysis(c));
+      const isSpatial = (item.analizler && item.analizler.length > 0) || targets.some(c => (c.analizler && c.analizler.length > 0) || getHeadingDegree(c.code) >= 4);
       
       const getAutoStatusFromProgress = (p: number, isSpatial: boolean): ReportStatusType => {
         if (p >= 100) return 'mavi_depoda_guncel';
@@ -302,12 +257,6 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
       const currentSt = analysisStatuses[an.id] || an.status;
       if (currentSt === 'Tamamlandı') completedAnalysesCount++;
     });
-    if (isLeafAnalysis(item)) {
-      totalAnalysesCount++;
-      const st = getStatus(item);
-      const prog = typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[st.status] ?? 0);
-      if (prog >= 70) completedAnalysesCount++;
-    }
   });
 
   // Group items by 2nd-level hierarchy (e.g., 3.1, 3.2, 3.3, 3.4, 3.5, 3.6)
@@ -508,7 +457,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
             {totalAnalysesCount > 0 && (
               <div className="chapter-meta-line">
                 <span className="chapter-analysis-badge">
-                  {completedAnalysesCount}/{totalAnalysesCount} {chapter.num === '3' ? 'Analiz' : 'Mekânsal Analiz'}
+                  {completedAnalysesCount}/{totalAnalysesCount} Mekânsal Analiz
                 </span>
               </div>
             )}
@@ -623,12 +572,6 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                       const aSt = analysisStatuses[an.id] || an.status;
                       if (aSt === 'Tamamlandı') groupCompletedAnalyses++;
                     });
-                    if (isLeafAnalysis(item)) {
-                      groupTotalAnalyses++;
-                      const st = getStatus(item);
-                      const prog = typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[st.status] ?? 0);
-                      if (prog >= 70) groupCompletedAnalyses++;
-                    }
                   });
 
                   const groupProgress = group.items.length > 0 ? Math.round(groupProgressSum / group.items.length) : 0;
@@ -681,7 +624,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 <span className="sgh-title">{group.groupTitle}</span>
                                 <span className="sgh-count-pill">
                                   {group.items.length} Alt Başlık
-                                  {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} ${chapter.num === '3' ? 'Analiz' : 'Mekânsal Analiz'}` : ''}
+                                  {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} Mekânsal Analiz` : ''}
                                 </span>
                               </div>
                               <div className="sgh-right" onClick={e => e.stopPropagation()}>
@@ -759,8 +702,8 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         const degree = getHeadingDegree(item.code);
                         const isEditableDegree = degree === 2 || degree === 3 || degree === 4;
                         
-                        // Consider item spatial if it has explicit `analizler`, or is a leaf analysis, or is a parent of leaf analyses.
-                        const isSpatialItem = hasAnalyses || isLeafAnalysis(item) || (hasChildren && group.items.some(i => i.code.startsWith(item.code + '.') && isLeafAnalysis(i)));
+                        // Consider item spatial if it has explicit `analizler`, or is a 4th degree header (e.g. 3.1.1.1), or is a parent of 4th degree headers.
+                        const isSpatialItem = hasAnalyses || degree === 4 || (hasChildren && group.items.some(i => i.code.startsWith(item.code + '.') && getHeadingDegree(i.code) === 4));
 
                         // Find parent code, e.g. '3.2.1' for '3.2.1.1'
                         const parts = item.code.split('.');
