@@ -806,6 +806,55 @@ button, select, input, textarea {
   background: #F0FDF4;
 }
 
+.sec-code {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.sec-code-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--panel-muted);
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+  font-size: 9px;
+  color: var(--ink-secondary);
+  border-radius: 4px;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.btn-collapse-toggle:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-collapse-spacer {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.sub-title-level-indent {
+  color: #94A3B8;
+  font-size: 13px;
+  user-select: none;
+  font-weight: 500;
+  display: inline-block;
+  margin-right: 2px;
+}
+
 .sec-code-badge {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;

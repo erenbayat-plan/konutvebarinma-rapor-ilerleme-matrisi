@@ -576,7 +576,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
             <table className="report-table">
               <thead>
                 <tr>
-                  <th style={{ width: '85px' }}>Kod</th>
+                  <th style={{ width: '120px' }}>Kod</th>
                   <th>Başlık</th>
                   <th style={{ width: '230px' }}>Rapor Durumu</th>
                   <th style={{ width: '130px' }}>İlerleme</th>
@@ -809,46 +809,36 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               title={analyses.length > 0 ? `${item.title} analizlerini ${isDetailOpen ? 'kapatmak' : 'görmek'} için tıklayın` : (hasChildren ? `Başlıkları ${collapsedGroups[item.code] ? 'genişletmek' : 'daraltmak'} için tıklayın` : undefined)}
                             >
                               {/* Kod */}
-                              <td className="sec-code" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <div style={{ width: `${Math.max(0, (parts.length - 2)) * 20}px`, flexShrink: 0 }} />
-                                <span className="row-drag-handle" title="Başlığı sürükleyerek sırasını değiştirin">
-                                  <GripVertical size={13} />
-                                </span>
-                                <div style={{ width: '20px', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-                                  {hasChildren && (
+                              <td className="sec-code">
+                                <div className="sec-code-wrapper">
+                                  <span className="row-drag-handle" title="Başlığı sürükleyerek sırasını değiştirin">
+                                    <GripVertical size={13} />
+                                  </span>
+                                  {hasChildren ? (
                                     <button
                                       type="button"
+                                      className="btn-collapse-toggle"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         toggleGroupCollapse(item.code);
                                       }}
-                                      style={{
-                                        background: 'var(--bg-elevated)',
-                                        border: '1px solid var(--border-light)',
-                                        cursor: 'pointer',
-                                        fontSize: '10px',
-                                        padding: '0',
-                                        color: 'var(--text-main)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        width: '20px',
-                                        height: '20px',
-                                        borderRadius: '4px'
-                                      }}
+                                      title={collapsedGroups[item.code] ? 'Genişlet' : 'Daralt'}
                                     >
                                       {collapsedGroups[item.code] ? '▶' : '▼'}
                                     </button>
+                                  ) : (
+                                    <span className="btn-collapse-spacer" />
                                   )}
+                                  <span className={`sec-code-badge ${degree === 4 ? 'deg-4-badge' : (group.isParentGroup ? 'sub-code-badge' : 'main-code-badge')}`}>
+                                    {item.code}
+                                  </span>
                                 </div>
-                                <span className={`sec-code-badge ${degree === 4 ? 'deg-4-badge' : (group.isParentGroup ? 'sub-code-badge' : 'main-code-badge')}`}>
-                                  {item.code}
-                                </span>
                               </td>
 
                               {/* Başlık */}
                               <td className="sec-title-cell">
-                                <div className="sub-title-main">
+                                <div className="sub-title-main" style={{ paddingLeft: `${Math.max(0, degree - 3) * 14}px` }}>
+                                  {degree >= 4 && <span className="sub-title-level-indent">↳</span>}
                                   <span className={`sub-title-text deg-${degree}`}>{item.title}</span>
                                   {analyses.length > 0 && (
                                     <span
