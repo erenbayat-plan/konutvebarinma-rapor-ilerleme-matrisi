@@ -12,7 +12,8 @@ import {
   ReportItem, 
   ReportChapterGroup,
   AnalysisItem,
-  isItemAnalysis
+  isItemAnalysis,
+  isAnalysisCompletedStatus
 } from './reportData';
 import { 
   queueGlobalCloudPush, 
@@ -1153,9 +1154,9 @@ export default function App() {
           });
         } else if (isItemAnalysis(item)) {
           totalAnalyses++;
-          if (itemStatusType === 'mavi_depoda_guncel' || itemStatusType === 'mavi_depoya_gidebilir' || itemStatusType === 'completed' || itemProgress >= 98) {
+          if (isAnalysisCompletedStatus(itemStatusType, itemProgress)) {
             completedAnalyses++;
-          } else if (itemStatusType === 'analiz_devam_ediyor' || itemStatusType === 'analiz_tamamlandi' || itemStatusType === 'drafting' || (itemProgress > 0 && itemProgress < 98)) {
+          } else if (itemStatusType === 'analiz_devam_ediyor' || itemStatusType === 'drafting' || (itemProgress > 0 && itemProgress < 70)) {
             draftingAnalyses++;
           }
         }
@@ -1304,7 +1305,7 @@ export default function App() {
             const st = reportStatus[id];
             const currentSt = st ? st.status : item.defaultStatus;
             const prog = st && typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[currentSt || 'baslanmadi'] ?? 0);
-            return currentSt === 'mavi_depoda_guncel' || currentSt === 'mavi_depoya_gidebilir' || currentSt === 'completed' || prog >= 98;
+            return isAnalysisCompletedStatus(currentSt, prog);
           }
           if (analysisFilter === 'analyses_pending') {
             if (!hasAnyAnalysis) return false;
@@ -1316,7 +1317,7 @@ export default function App() {
             const st = reportStatus[id];
             const currentSt = st ? st.status : item.defaultStatus;
             const prog = st && typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[currentSt || 'baslanmadi'] ?? 0);
-            return !(currentSt === 'mavi_depoda_guncel' || currentSt === 'mavi_depoya_gidebilir' || currentSt === 'completed' || prog >= 98);
+            return !isAnalysisCompletedStatus(currentSt, prog);
           }
           return true;
         });

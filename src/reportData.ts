@@ -211,6 +211,34 @@ export function isItemAnalysis(item: ReportItem & { customId?: string; isCustom?
 }
 
 /**
+ * Checks whether an analysis item or status is considered completed.
+ * Includes 'tamamlandi_raporu_yazilabilir', 'analiz_tamamlandi', 'rapora_yazildi',
+ * 'rapor_okundu_sidar', 'rapor_okundu_ea', 'mavi_depoya_gidebilir', 'mavi_depoda_guncel',
+ * 'completed', 'nm_kontrol_tamamlandi', or progress >= 70.
+ */
+export function isAnalysisCompletedStatus(status?: string | null, progress?: number | null): boolean {
+  if (!status && (progress === undefined || progress === null)) return false;
+  if (
+    status === 'completed' ||
+    status === 'mavi_depoda_guncel' ||
+    status === 'mavi_depoya_gidebilir' ||
+    status === 'rapor_okundu_ea' ||
+    status === 'rapor_okundu_sidar' ||
+    status === 'rapora_yazildi' ||
+    status === 'tamamlandi_raporu_yazilabilir' ||
+    status === 'analiz_tamamlandi' ||
+    status === 'nm_kontrol_tamamlandi' ||
+    status === 'Tamamlandı'
+  ) {
+    return true;
+  }
+  if (typeof progress === 'number' && progress >= 70) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Compares two dot-separated hierarchical codes strictly and numerically.
  * Examples:
  * 3 < 3.1 < 3.1.1 < 3.1.1.1 < 3.1.1.2 < 3.1.2 < 3.2 < 3.2.1 < 3.2.2.1 < 3.2.2.2

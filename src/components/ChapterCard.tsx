@@ -8,7 +8,8 @@ import {
   NON_SPATIAL_STATUS_KEYS,
   getStatusLabel,
   compareHierarchicalCodes,
-  isItemAnalysis
+  isItemAnalysis,
+  isAnalysisCompletedStatus
 } from '../reportData';
 import type { ReportStatusItem } from '../syncService';
 import { HeadingModal, HeadingFormData } from './HeadingModal';
@@ -260,12 +261,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   // Helper to determine if an item's analysis is considered completed
   const isItemAnalysisDone = (item: ReportItem) => {
     const st = getStatus(item);
-    return (
-      st.status === 'completed' ||
-      st.status === 'mavi_depoda_guncel' ||
-      st.status === 'mavi_depoya_gidebilir' ||
-      (typeof st.progress === 'number' && st.progress >= 98)
-    );
+    return isAnalysisCompletedStatus(st.status, st.progress);
   };
 
   // Analysis statistics in this chapter
@@ -736,10 +732,10 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         const id = getItemId(item);
                         const st = getStatus(item);
                         const isDetailOpen = !!expandedDetails[id];
-                        const analyses = item.analizler || [];
+                        const hasChildren = group.items.some(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
+                        const analyses = hasChildren ? [] : (item.analizler || []);
                         const hasAnalyses = analyses.length > 0;
                         const analysesDoneCount = analyses.filter(a => (analysisStatuses[a.id] || a.status) === 'Tamamlandı').length;
-                        const hasChildren = group.items.some(i => i.code.startsWith(item.code + '.') && i.code !== item.code);
                         
                         // Degree Calculation: 2nd, 3rd, and 4th degree headings can be edited, deleted, or added
                         const degree = getHeadingDegree(item.code);
