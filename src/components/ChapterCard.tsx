@@ -793,7 +793,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                     </button>
                                   )}
                                 </div>
-                                <span className={`sec-code-badge ${group.isParentGroup ? 'sub-code-badge' : 'main-code-badge'}`}>
+                                <span className={`sec-code-badge ${degree === 4 ? 'deg-4-badge' : (group.isParentGroup ? 'sub-code-badge' : 'main-code-badge')}`}>
                                   {item.code}
                                 </span>
                               </td>
@@ -801,7 +801,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               {/* Başlık */}
                               <td className="sec-title-cell">
                                 <div className="sub-title-main">
-                                  <span className="sub-title-text">{item.title}</span>
+                                  <span className={`sub-title-text deg-${degree}`}>{item.title}</span>
                                   {analyses.length > 0 && (
                                     <span
                                       className={`inline-analysis-count-badge ${isDetailOpen ? 'is-open' : ''}`}
