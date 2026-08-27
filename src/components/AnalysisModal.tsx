@@ -23,7 +23,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
   onSubmit
 }) => {
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('CBS / Mekânsal Analiz');
+  const [category, setCategory] = useState('CBS / Harita Analizi');
   const [status, setStatus] = useState<'Tamamlandı' | 'Devam Ediyor' | 'Başlamadı' | 'İncelemede'>('Başlamadı');
   const [error, setError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -32,11 +32,11 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
     if (isOpen) {
       if (initialData) {
         setName(initialData.name || '');
-        setCategory(initialData.category || 'CBS / Mekânsal Analiz');
+        setCategory(initialData.category || 'CBS / Harita Analizi');
         setStatus(initialData.status || 'Başlamadı');
       } else {
         setName('');
-        setCategory('CBS / Mekânsal Analiz');
+        setCategory('CBS / Harita Analizi');
         setStatus('Başlamadı');
       }
       setError(null);
@@ -88,7 +88,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
               </div>
               <div>
                 <h3 className="custom-modal-title">
-                  {mode === 'add' ? 'Yeni Mekânsal Analiz Ekle' : 'Mekânsal Analizi Düzenle'}
+                  {mode === 'add' ? 'Yeni Analiz Ekle' : 'Analizi Düzenle'}
                 </h3>
                 {itemTitle && (
                   <span className="custom-modal-subtitle">
@@ -141,14 +141,14 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="Örn: CBS / Mekânsal Analiz"
+                    placeholder="Örn: CBS / Harita Analizi"
                     value={category}
                     onChange={e => setCategory(e.target.value)}
                     list="category-suggestions"
                   />
                   <datalist id="category-suggestions">
-                    <option value="CBS / Mekânsal Analiz" />
-                    <option value="Mekânsal Tipoloji & Morfoloji" />
+                    <option value="CBS / Harita Analizi" />
+                    <option value="Tipoloji & Morfoloji Analizi" />
                     <option value="Demografik & Sosyo-Ekonomik" />
                     <option value="Yapı Stoğu & Ruhsat Analizi" />
                     <option value="Fiyat, Değer & Kira Dağılımı" />

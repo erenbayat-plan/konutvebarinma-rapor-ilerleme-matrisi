@@ -1143,12 +1143,21 @@ export default function App() {
         }
 
         // Analyses
-        (item.analizler || []).forEach(an => {
+        if (item.analizler && item.analizler.length > 0) {
+          item.analizler.forEach(an => {
+            totalAnalyses++;
+            const anSt = analysisStatuses[an.id] || an.status;
+            if (anSt === 'Tamamlandı') completedAnalyses++;
+            else if (anSt === 'Devam Ediyor') draftingAnalyses++;
+          });
+        } else if (item.degree === 4 || item.code.split('.').filter(Boolean).length >= 4 || item.isSpatialAnalysis) {
           totalAnalyses++;
-          const anSt = analysisStatuses[an.id] || an.status;
-          if (anSt === 'Tamamlandı') completedAnalyses++;
-          else if (anSt === 'Devam Ediyor') draftingAnalyses++;
-        });
+          if (itemStatusType === 'mavi_depoda_guncel' || itemStatusType === 'mavi_depoya_gidebilir' || itemStatusType === 'completed' || itemProgress >= 98) {
+            completedAnalyses++;
+          } else if (itemStatusType === 'analiz_devam_ediyor' || itemStatusType === 'analiz_tamamlandi' || itemStatusType === 'drafting' || (itemProgress > 0 && itemProgress < 98)) {
+            draftingAnalyses++;
+          }
+        }
       });
     });
 
@@ -1208,7 +1217,7 @@ export default function App() {
         };
       }).filter(Boolean) as (ReportItem & { isCustom?: boolean; customId?: string })[];
 
-      const customs = getCustomItemsForChapter(customItems, activeTab, ch.num).map(s => ({
+      const customs: (ReportItem & { isCustom?: boolean; customId?: string })[] = getCustomItemsForChapter(customItems, activeTab, ch.num).map(s => ({
         id: s.id,
         level1: `${ch.num}. ${ch.title}`,
         level1Num: ch.num,
@@ -1223,7 +1232,8 @@ export default function App() {
         analizler: s.analizler || [],
         isCustom: true,
         customId: s.id,
-        defaultStatus: 'baslanmadi' as ReportStatusType
+        defaultStatus: 'baslanmadi' as ReportStatusType,
+        degree: s.code.split('.').filter(Boolean).length
       }));
 
       let allItems = [...defaultItems, ...customs].sort((a, b) => compareHierarchicalCodes(a.code, b.code));
@@ -1276,16 +1286,36 @@ export default function App() {
 
       if (analysisFilter !== 'all') {
         allItems = allItems.filter(item => {
+          const is4thDegree = item.degree === 4 || item.code.split('.').filter(Boolean).length >= 4 || !!item.isSpatialAnalysis;
+          const hasSubAnalyses = (item.analizler || []).length > 0;
+          const hasAnyAnalysis = is4thDegree || hasSubAnalyses;
+
           if (analysisFilter === 'has_analyses') {
-            return (item.analizler || []).length > 0;
+            return hasAnyAnalysis;
           }
           if (analysisFilter === 'analyses_done') {
-            const anList = item.analizler || [];
-            return anList.length > 0 && anList.every(an => (analysisStatuses[an.id] || an.status) === 'Tamamlandı');
+            if (!hasAnyAnalysis) return false;
+            if (hasSubAnalyses) {
+              const anList = item.analizler || [];
+              return anList.every(an => (analysisStatuses[an.id] || an.status) === 'Tamamlandı');
+            }
+            const id = getItemId(item, activeTab);
+            const st = reportStatus[id];
+            const currentSt = st ? st.status : item.defaultStatus;
+            const prog = st && typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[currentSt || 'baslanmadi'] ?? 0);
+            return currentSt === 'mavi_depoda_guncel' || currentSt === 'mavi_depoya_gidebilir' || currentSt === 'completed' || prog >= 98;
           }
           if (analysisFilter === 'analyses_pending') {
-            const anList = item.analizler || [];
-            return anList.length > 0 && anList.some(an => (analysisStatuses[an.id] || an.status) !== 'Tamamlandı');
+            if (!hasAnyAnalysis) return false;
+            if (hasSubAnalyses) {
+              const anList = item.analizler || [];
+              return anList.some(an => (analysisStatuses[an.id] || an.status) !== 'Tamamlandı');
+            }
+            const id = getItemId(item, activeTab);
+            const st = reportStatus[id];
+            const currentSt = st ? st.status : item.defaultStatus;
+            const prog = st && typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[currentSt || 'baslanmadi'] ?? 0);
+            return !(currentSt === 'mavi_depoda_guncel' || currentSt === 'mavi_depoya_gidebilir' || currentSt === 'completed' || prog >= 98);
           }
           return true;
         });
@@ -1329,7 +1359,7 @@ export default function App() {
               <span className="brand-env-badge">İSTANBUL PLAN 2050</span>
             </div>
             <span className="brand-subtitle">
-              İstanbul 2050 Çevre Düzeni Planı · Rapor ve Mekânsal Analiz Takip Matrisi
+              İstanbul 2050 Çevre Düzeni Planı · Rapor ve Analiz Takip Matrisi
             </span>
           </div>
         </div>
@@ -1410,16 +1440,16 @@ export default function App() {
 
             {/* Analysis Filter */}
             <div className="cf-select-wrap">
-              <span className="cf-select-label">Mekânsal Analiz:</span>
+              <span className="cf-select-label">Analiz Durumu:</span>
               <select
                 value={analysisFilter}
                 onChange={e => setAnalysisFilter(e.target.value)}
                 className="cf-select"
               >
                 <option value="all">Tüm Başlıklar</option>
-                <option value="has_analyses">CBS Analizi İçerenler</option>
-                <option value="analyses_done">Analizleri Tamamlananlar</option>
-                <option value="analyses_pending">Analizi Bekleyenler</option>
+                <option value="has_analyses">Analiz İçeren Başlıklar</option>
+                <option value="analyses_done">Analizi Tamamlananlar</option>
+                <option value="analyses_pending">Analizi Bekleyenler / Devam Edenler</option>
               </select>
             </div>
 

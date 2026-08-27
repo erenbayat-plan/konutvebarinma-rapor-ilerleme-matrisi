@@ -256,15 +256,38 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   }, 0);
   const chapterProgress = totalCount > 0 ? Math.round(sumProgress / totalCount) : 0;
 
+  // Helper to determine if an item is an analysis (4th degree heading or marked spatial)
+  const isItemAnalysis = (item: ReportItem) => {
+    const parts = item.code.split('.').filter(Boolean);
+    return parts.length >= 4 || item.degree === 4 || !!item.isSpatialAnalysis;
+  };
+
+  const isItemAnalysisDone = (item: ReportItem) => {
+    const st = getStatus(item);
+    return (
+      st.status === 'completed' ||
+      st.status === 'mavi_depoda_guncel' ||
+      st.status === 'mavi_depoya_gidebilir' ||
+      (typeof st.progress === 'number' && st.progress >= 98)
+    );
+  };
+
   // Analysis statistics in this chapter
   let totalAnalysesCount = 0;
   let completedAnalysesCount = 0;
   sortedItems.forEach(item => {
-    (item.analizler || []).forEach(an => {
+    if (item.analizler && item.analizler.length > 0) {
+      item.analizler.forEach(an => {
+        totalAnalysesCount++;
+        const currentSt = analysisStatuses[an.id] || an.status;
+        if (currentSt === 'Tamamlandı') completedAnalysesCount++;
+      });
+    } else if (isItemAnalysis(item)) {
       totalAnalysesCount++;
-      const currentSt = analysisStatuses[an.id] || an.status;
-      if (currentSt === 'Tamamlandı') completedAnalysesCount++;
-    });
+      if (isItemAnalysisDone(item)) {
+        completedAnalysesCount++;
+      }
+    }
   });
 
   // Group items by 2nd-level hierarchy (e.g., 3.1, 3.2, 3.3, 3.4, 3.5, 3.6)
@@ -447,7 +470,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   const handleOpenDeleteAnalysis = (item: ReportItem & { customId?: string; isCustom?: boolean }, an: AnalysisItem) => {
     setConfirmModalState({
       isOpen: true,
-      title: 'Mekânsal Analizi Silmek İstiyor musunuz?',
+      title: 'Analizi Silmek İstiyor musunuz?',
       message: `"${an.name}" analizi "${item.code} ${item.title}" başlığı altından kaldırılacaktır.`,
       variant: 'danger',
       confirmLabel: 'Evet, Sil',
@@ -471,7 +494,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
             {totalAnalysesCount > 0 && (
               <div className="chapter-meta-line">
                 <span className="chapter-analysis-badge">
-                  {completedAnalysesCount}/{totalAnalysesCount} Mekânsal Analiz
+                  {completedAnalysesCount}/{totalAnalysesCount} Analiz
                 </span>
               </div>
             )}
@@ -577,15 +600,23 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
 
                   group.items.forEach(item => {
                     const st = getStatus(item);
-                    if (st.status === 'completed' || st.status === 'mavi_depoda_guncel' || st.status === 'mavi_depoya_gidebilir' || st.progress >= 98) {
+                    if (isItemAnalysisDone(item)) {
                       groupCompletedCount++;
                     }
                     groupProgressSum += typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[st.status] ?? 0);
-                    (item.analizler || []).forEach(an => {
+
+                    if (item.analizler && item.analizler.length > 0) {
+                      item.analizler.forEach(an => {
+                        groupTotalAnalyses++;
+                        const aSt = analysisStatuses[an.id] || an.status;
+                        if (aSt === 'Tamamlandı') groupCompletedAnalyses++;
+                      });
+                    } else if (isItemAnalysis(item)) {
                       groupTotalAnalyses++;
-                      const aSt = analysisStatuses[an.id] || an.status;
-                      if (aSt === 'Tamamlandı') groupCompletedAnalyses++;
-                    });
+                      if (isItemAnalysisDone(item)) {
+                        groupCompletedAnalyses++;
+                      }
+                    }
                   });
 
                   const groupProgress = group.items.length > 0 ? Math.round(groupProgressSum / group.items.length) : 0;
@@ -638,7 +669,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 <span className="sgh-title">{group.groupTitle}</span>
                                 <span className="sgh-count-pill">
                                   {group.items.length} Alt Başlık
-                                  {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} Mekânsal Analiz` : ''}
+                                  {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} Analiz` : ''}
                                 </span>
                               </div>
                               <div className="sgh-right" onClick={e => e.stopPropagation()}>
@@ -962,7 +993,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               </td>
                             </tr>
 
-                            {/* Expanded Detail Drawer: Mekânsal ve CBS Analizleri */}
+                            {/* Expanded Detail Drawer: Analizler */}
                             {isDetailOpen && (
                               <tr className="note-expanded-row">
                                 <td colSpan={6}>
@@ -971,13 +1002,13 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                     <div className="dep-top-bar">
                                       <div className="dep-top-left">
                                         <span className="dep-code-pill">{item.code}</span>
-                                        <h4 className="dep-item-title">{item.title} — Mekânsal ve CBS Analizleri</h4>
+                                        <h4 className="dep-item-title">{item.title} — Analizler</h4>
                                       </div>
                                       <div className="dep-top-right">
                                         <button
                                           type="button"
                                           className="btn-add-analysis-minimal"
-                                          title="Bu başlık altına yeni mekânsal analiz ekle"
+                                          title="Bu başlık altına yeni analiz ekle"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             handleOpenAddAnalysis(item);
@@ -992,11 +1023,11 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                       </div>
                                     </div>
 
-                                    {/* Mekânsal ve CBS Analizleri Izgarası */}
+                                    {/* Analizler Izgarası */}
                                     <div className="dep-analyses-grid-compact">
                                       {analyses.length === 0 ? (
                                         <div style={{ padding: '12px', color: 'var(--muted)', fontSize: '12px' }}>
-                                          Bu başlık altında henüz kayıtlı mekânsal analiz bulunmuyor. Yeni analiz eklemek için yukarıdaki "Analiz Ekle" butonunu kullanabilirsiniz.
+                                          Bu başlık altında henüz kayıtlı analiz bulunmuyor. Yeni analiz eklemek için yukarıdaki "Analiz Ekle" butonunu kullanabilirsiniz.
                                         </div>
                                       ) : (
                                         analyses.map(an => {

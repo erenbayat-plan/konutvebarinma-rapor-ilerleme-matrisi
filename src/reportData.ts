@@ -184,6 +184,8 @@ export interface ReportItem {
   analizler?: AnalysisItem[];
   defaultStatus?: ReportStatusType;
   defaultPages?: string;
+  degree?: number;
+  isSpatialAnalysis?: boolean;
 }
 
 export interface ReportChapterGroup {
