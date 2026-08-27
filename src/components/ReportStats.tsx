@@ -90,7 +90,7 @@ export const ReportStats: React.FC<ReportStatsProps> = ({ stats }) => {
           <span className="sc-label">Analiz Süreci</span>
         </div>
         <div className="sc-val text-slate-700">{stats.analizTamamlandi + stats.analizDevamEdiyor}</div>
-        <div className="sc-sub">Tamam: {stats.analizTamamlandi} (%60) · Devam: {stats.analizDevamEdiyor} (%40)</div>
+        <div className="sc-sub">Tamam: {stats.analizTamamlandi} (%70) · Devam: {stats.analizDevamEdiyor} (%60)</div>
       </div>
 
       {/* Başlanmadı */}

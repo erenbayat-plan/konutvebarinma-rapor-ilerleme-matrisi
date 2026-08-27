@@ -182,20 +182,22 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
       const progress = count > 0 ? Math.round(sumProgress / count) : 0;
       const id = getItemId(item);
       const saved = reportStatus[id] || {};
-      const hasAnalyses = (item.analizler && item.analizler.length > 0) || targets.some(c => c.analizler && c.analizler.length > 0);
+      const isSpatial = (item.analizler && item.analizler.length > 0) || targets.some(c => (c.analizler && c.analizler.length > 0) || getHeadingDegree(c.code) >= 4);
       
       const getAutoStatusFromProgress = (p: number, isSpatial: boolean): ReportStatusType => {
         if (p >= 100) return 'mavi_depoda_guncel';
         if (p >= 98) return isSpatial ? 'mavi_depoya_gidebilir' : 'mavi_depoda_guncel';
-        if (p >= 85) return isSpatial ? 'rapor_okundu_sidar' : 'nm_kontrol_tamamlandi';
-        if (p >= 75) return isSpatial ? 'rapora_yazildi' : 'nm_kontrol_tamamlandi';
-        if (p >= 50) return isSpatial ? 'tamamlandi_raporu_yazilabilir' : 'nm_yazildi_kontrol_bekliyor';
-        if (p >= 25) return isSpatial ? 'analiz_tamamlandi' : 'nm_yaziliyor';
+        if (p >= 97) return isSpatial ? 'rapor_okundu_ea' : 'nm_kontrol_tamamlandi';
+        if (p >= 95) return isSpatial ? 'rapor_okundu_sidar' : 'nm_kontrol_tamamlandi';
+        if (p >= 90) return isSpatial ? 'rapora_yazildi' : 'nm_kontrol_tamamlandi';
+        if (p >= 80) return isSpatial ? 'tamamlandi_raporu_yazilabilir' : 'nm_yazildi_kontrol_bekliyor';
+        if (p >= 70) return isSpatial ? 'analiz_tamamlandi' : 'nm_yazildi_kontrol_bekliyor';
+        if (p >= 60) return isSpatial ? 'analiz_devam_ediyor' : 'nm_yaziliyor';
         if (p > 0) return isSpatial ? 'analiz_devam_ediyor' : 'nm_yaziliyor';
         return 'baslanmadi';
       };
 
-      const status = getAutoStatusFromProgress(progress, hasAnalyses);
+      const status = getAutoStatusFromProgress(progress, isSpatial);
 
       return {
         status,
@@ -255,6 +257,12 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
       const currentSt = analysisStatuses[an.id] || an.status;
       if (currentSt === 'Tamamlandı') completedAnalysesCount++;
     });
+    if (getHeadingDegree(item.code) === 4) {
+      totalAnalysesCount++;
+      const st = getStatus(item);
+      const prog = typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[st.status] ?? 0);
+      if (prog >= 70) completedAnalysesCount++;
+    }
   });
 
   // Group items by 2nd-level hierarchy (e.g., 3.1, 3.2, 3.3, 3.4, 3.5, 3.6)
@@ -455,7 +463,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
             {totalAnalysesCount > 0 && (
               <div className="chapter-meta-line">
                 <span className="chapter-analysis-badge">
-                  {completedAnalysesCount}/{totalAnalysesCount} Mekânsal Analiz
+                  {completedAnalysesCount}/{totalAnalysesCount} {chapter.num === '3' ? 'Analiz' : 'Mekânsal Analiz'}
                 </span>
               </div>
             )}
@@ -570,6 +578,12 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                       const aSt = analysisStatuses[an.id] || an.status;
                       if (aSt === 'Tamamlandı') groupCompletedAnalyses++;
                     });
+                    if (getHeadingDegree(item.code) === 4) {
+                      groupTotalAnalyses++;
+                      const st = getStatus(item);
+                      const prog = typeof st.progress === 'number' ? st.progress : (STATUS_PROGRESS_MAP[st.status] ?? 0);
+                      if (prog >= 70) groupCompletedAnalyses++;
+                    }
                   });
 
                   const groupProgress = group.items.length > 0 ? Math.round(groupProgressSum / group.items.length) : 0;
@@ -622,7 +636,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 <span className="sgh-title">{group.groupTitle}</span>
                                 <span className="sgh-count-pill">
                                   {group.items.length} Alt Başlık
-                                  {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} Mekânsal Analiz` : ''}
+                                  {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} ${chapter.num === '3' ? 'Analiz' : 'Mekânsal Analiz'}` : ''}
                                 </span>
                               </div>
                               <div className="sgh-right" onClick={e => e.stopPropagation()}>
@@ -699,6 +713,9 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         // Degree Calculation: 2nd, 3rd, and 4th degree headings can be edited, deleted, or added
                         const degree = getHeadingDegree(item.code);
                         const isEditableDegree = degree === 2 || degree === 3 || degree === 4;
+                        
+                        // Consider item spatial if it has explicit `analizler`, or is a 4th degree header (e.g. 3.1.1.1), or is a parent of 4th degree headers.
+                        const isSpatialItem = hasAnalyses || degree === 4 || (hasChildren && group.items.some(i => i.code.startsWith(item.code + '.') && getHeadingDegree(i.code) === 4));
 
                         // Find parent code, e.g. '3.2.1' for '3.2.1.1'
                         const parts = item.code.split('.');
@@ -817,7 +834,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 {hasChildren ? (
                                   <div className="auto-status-indicator" title="Bu başlığın durumu, altındaki alt başlıkların tamamlanma durumuna göre otomatik hesaplanmaktadır.">
                                     <span className={`report-status-badge st-${st.status}`}>
-                                      {getStatusLabel(st.status, hasAnalyses)}
+                                      {getStatusLabel(st.status, isSpatialItem)}
                                     </span>
                                     <span className="auto-status-subtext">Otomatik Hesaplanan</span>
                                   </div>
@@ -834,8 +851,8 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                       });
                                     }}
                                   >
-                                    {(hasAnalyses ? SPATIAL_STATUS_KEYS : NON_SPATIAL_STATUS_KEYS).map(k => (
-                                      <option key={k} value={k}>{getStatusLabel(k, hasAnalyses)}</option>
+                                    {(isSpatialItem ? SPATIAL_STATUS_KEYS : NON_SPATIAL_STATUS_KEYS).map(k => (
+                                      <option key={k} value={k}>{getStatusLabel(k, isSpatialItem)}</option>
                                     ))}
                                   </select>
                                 )}
@@ -854,7 +871,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                           background: 
                                             (st.progress >= 98 || st.status === 'mavi_depoda_guncel' || st.status === 'mavi_depoya_gidebilir') ? 'var(--ok)' :
                                             st.progress >= 80 ? 'var(--status-review)' :
-                                            st.progress >= 40 ? 'var(--status-draft)' : 'var(--line-strong)'
+                                            st.progress > 0 ? 'var(--status-draft)' : 'var(--line-strong)'
                                         }} 
                                       />
                                     </div>

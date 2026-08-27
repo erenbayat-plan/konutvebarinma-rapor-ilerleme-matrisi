@@ -28,12 +28,12 @@ export type ReportStatusType =
 export const STATUS_PROGRESS_MAP: Record<ReportStatusType, number> = {
   mavi_depoda_guncel: 100,
   mavi_depoya_gidebilir: 98,
-  rapor_okundu_ea: 95,
-  rapor_okundu_sidar: 85,
-  rapora_yazildi: 80,
-  tamamlandi_raporu_yazilabilir: 70,
-  analiz_tamamlandi: 60,
-  analiz_devam_ediyor: 40,
+  rapor_okundu_ea: 97,
+  rapor_okundu_sidar: 95,
+  rapora_yazildi: 90,
+  tamamlandi_raporu_yazilabilir: 80,
+  analiz_tamamlandi: 70,
+  analiz_devam_ediyor: 60,
   baslanmadi: 0,
   // Non-spatial specific
   nm_kontrol_tamamlandi: 75,
@@ -41,8 +41,8 @@ export const STATUS_PROGRESS_MAP: Record<ReportStatusType, number> = {
   nm_yaziliyor: 25,
   // legacy fallback
   completed: 100,
-  review: 85,
-  drafting: 40,
+  review: 95,
+  drafting: 60,
   not_started: 0
 };
 
@@ -85,9 +85,18 @@ export const NON_SPATIAL_STATUS_KEYS: ReportStatusType[] = [
 ];
 
 export function getStatusLabel(key: string, isSpatial: boolean): string {
-  if (key === 'mavi_depoda_guncel' && !isSpatial) return 'Mavi depoda güncel %100';
-  if (key === 'baslanmadi' && !isSpatial) return 'Başlanmadı. %0';
-  return REPORT_STATUS_LABEL[key] || REPORT_STATUS_LABEL[key.replace('nm_', '')] || key;
+  if (!isSpatial) {
+    if (key === 'mavi_depoda_guncel') return 'Mavi depoda güncel %100';
+    if (key === 'baslanmadi') return 'Başlanmadı. %0';
+  }
+  
+  const baseLabel = REPORT_STATUS_LABEL[key] || REPORT_STATUS_LABEL[key.replace('nm_', '')] || key;
+  
+  if (isSpatial && STATUS_PROGRESS_MAP[key as ReportStatusType] !== undefined) {
+    return `${baseLabel} %${STATUS_PROGRESS_MAP[key as ReportStatusType]}`;
+  }
+  
+  return baseLabel;
 }
 
 // Pure short status labels
@@ -112,9 +121,9 @@ export const REPORT_STATUS_SHORT_LABEL: Record<string, string> = {
 
 /**
  * Calculates the automated Report Status based on sub-analyses states:
- * 1. All Tamamlandı -> "Tamamlandı, raporu yazılabilir" (%70)
- * 2. Only Tamamlandı and Devam Ediyor (no Başlamadı) -> "Analiz tamamlandı, kontrol edilecek" (%60)
- * 3. Mix of Tamamlandı/Devam Ediyor/Başlamadı -> "Analiz devam ediyor" (%40)
+ * 1. All Tamamlandı -> "Tamamlandı, raporu yazılabilir" (%80)
+ * 2. Only Tamamlandı and Devam Ediyor (no Başlamadı) -> "Analiz tamamlandı, kontrol edilecek" (%70)
+ * 3. Mix of Tamamlandı/Devam Ediyor/Başlamadı -> "Analiz devam ediyor" (%60)
  * 4. All Başlamadı -> "Başlanmadı" (%0)
  */
 export function computeAutoStatusForAnalyses(
@@ -142,19 +151,19 @@ export function computeAutoStatusForAnalyses(
 
   const total = analyses.length;
 
-  // 1. Altındaki analizlerin tamamı tamamlandığında: "Tamamlandı, raporu yazılabilir %70"
+  // 1. Altındaki analizlerin tamamı tamamlandığında: "Tamamlandı, raporu yazılabilir %80"
   if (doneCount === total && total > 0) {
-    return { status: 'tamamlandi_raporu_yazilabilir', progress: 70 };
+    return { status: 'tamamlandi_raporu_yazilabilir', progress: 80 };
   }
 
-  // 2. Sadece Tamamlandı ve Devam Ediyor varsa (hiç Başlamadı yoksa): "Analiz tamamlandı, kontrol edilecek %60"
+  // 2. Sadece Tamamlandı ve Devam Ediyor varsa (hiç Başlamadı yoksa): "Analiz tamamlandı, kontrol edilecek %70"
   if (notStartedCount === 0 && (doneCount > 0 || inProgressCount > 0)) {
-    return { status: 'analiz_tamamlandi', progress: 60 };
+    return { status: 'analiz_tamamlandi', progress: 70 };
   }
 
-  // 3. Tamamlandı, Başlamadı ve Devam Ediyor karışımı (analizler devam ediyor): "Analiz devam ediyor %40"
+  // 3. Tamamlandı, Başlamadı ve Devam Ediyor karışımı (analizler devam ediyor): "Analiz devam ediyor %60"
   if (doneCount > 0 || inProgressCount > 0) {
-    return { status: 'analiz_devam_ediyor', progress: 40 };
+    return { status: 'analiz_devam_ediyor', progress: 60 };
   }
 
   // 4. Hiçbiri başlamadı: "Başlanmadı %0"
