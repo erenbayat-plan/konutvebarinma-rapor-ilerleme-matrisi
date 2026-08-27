@@ -11,7 +11,8 @@ import {
   ReportStatusType,
   ReportItem, 
   ReportChapterGroup,
-  AnalysisItem
+  AnalysisItem,
+  isItemAnalysis
 } from './reportData';
 import { 
   queueGlobalCloudPush, 
@@ -1150,7 +1151,7 @@ export default function App() {
             if (anSt === 'Tamamlandı') completedAnalyses++;
             else if (anSt === 'Devam Ediyor') draftingAnalyses++;
           });
-        } else if (item.degree === 4 || item.code.split('.').filter(Boolean).length >= 4 || item.isSpatialAnalysis) {
+        } else if (isItemAnalysis(item)) {
           totalAnalyses++;
           if (itemStatusType === 'mavi_depoda_guncel' || itemStatusType === 'mavi_depoya_gidebilir' || itemStatusType === 'completed' || itemProgress >= 98) {
             completedAnalyses++;
@@ -1286,7 +1287,7 @@ export default function App() {
 
       if (analysisFilter !== 'all') {
         allItems = allItems.filter(item => {
-          const is4thDegree = item.degree === 4 || item.code.split('.').filter(Boolean).length >= 4 || !!item.isSpatialAnalysis;
+          const is4thDegree = isItemAnalysis(item);
           const hasSubAnalyses = (item.analizler || []).length > 0;
           const hasAnyAnalysis = is4thDegree || hasSubAnalyses;
 

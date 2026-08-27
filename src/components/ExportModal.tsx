@@ -144,7 +144,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     });
 
     const totalPct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
-    summaryText = `GENEL DURUM: %${totalPct} Tamamlandı (${completedItems}/${totalItems} Alt Bölüm)\n` + summaryText;
+    summaryText = `GENEL DURUM: %${totalPct} Tamamlandı (${completedItems}/${totalItems} Bölüm)\n` + summaryText;
 
     navigator.clipboard.writeText(summaryText).then(() => {
       setCopied(true);

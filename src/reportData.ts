@@ -195,6 +195,22 @@ export interface ReportChapterGroup {
 }
 
 /**
+ * Helper to determine if an item is considered a detailed analysis.
+ * - Any item with sub-analyses (analizler)
+ * - 4th degree items (e.g. 3.1.1.1, 3.4.6.10, etc.)
+ * - Chapter 3.6 items (3.6, 3.6.1, 3.6.2, 3.6.3, 3.6.4)
+ * - Any item explicitly marked with isSpatialAnalysis or degree === 4
+ */
+export function isItemAnalysis(item: ReportItem & { customId?: string; isCustom?: boolean }): boolean {
+  if (item.analizler && item.analizler.length > 0) return true;
+  if (item.degree === 4 || item.isSpatialAnalysis === true) return true;
+  const parts = item.code.split('.').filter(Boolean);
+  if (parts.length >= 4) return true;
+  if (item.level1Num === '3' && item.code.startsWith('3.6')) return true;
+  return false;
+}
+
+/**
  * Compares two dot-separated hierarchical codes strictly and numerically.
  * Examples:
  * 3 < 3.1 < 3.1.1 < 3.1.1.1 < 3.1.1.2 < 3.1.2 < 3.2 < 3.2.1 < 3.2.2.1 < 3.2.2.2

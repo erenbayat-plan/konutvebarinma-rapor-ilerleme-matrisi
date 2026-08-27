@@ -7,7 +7,8 @@ import {
   SPATIAL_STATUS_KEYS,
   NON_SPATIAL_STATUS_KEYS,
   getStatusLabel,
-  compareHierarchicalCodes
+  compareHierarchicalCodes,
+  isItemAnalysis
 } from '../reportData';
 import type { ReportStatusItem } from '../syncService';
 import { HeadingModal, HeadingFormData } from './HeadingModal';
@@ -256,12 +257,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
   }, 0);
   const chapterProgress = totalCount > 0 ? Math.round(sumProgress / totalCount) : 0;
 
-  // Helper to determine if an item is an analysis (4th degree heading or marked spatial)
-  const isItemAnalysis = (item: ReportItem) => {
-    const parts = item.code.split('.').filter(Boolean);
-    return parts.length >= 4 || item.degree === 4 || !!item.isSpatialAnalysis;
-  };
-
+  // Helper to determine if an item's analysis is considered completed
   const isItemAnalysisDone = (item: ReportItem) => {
     const st = getStatus(item);
     return (
@@ -437,7 +433,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
     setConfirmModalState({
       isOpen: true,
       title: '2. Derece Başlığı Silmek İstiyor musunuz?',
-      message: `"${groupCode} ${groupTitle}" başlıklı 2. derece bölüm ve altındaki tüm alt başlıklar ile analizler kaldırılacaktır. Bu işlem geri alınamaz.`,
+      message: `"${groupCode} ${groupTitle}" başlıklı 2. derece bölüm ve altındaki tüm başlıklar ile analizler kaldırılacaktır. Bu işlem geri alınamaz.`,
       variant: 'danger',
       confirmLabel: 'Evet, Sil',
       onConfirm: () => {
@@ -581,7 +577,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
               <thead>
                 <tr>
                   <th style={{ width: '85px' }}>Kod</th>
-                  <th>Başlık / Alt Başlıklar</th>
+                  <th>Başlık</th>
                   <th style={{ width: '230px' }}>Rapor Durumu</th>
                   <th style={{ width: '130px' }}>İlerleme</th>
                   <th style={{ width: '170px' }}>Sorumlu Yazar</th>
@@ -657,7 +653,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                           }}
                           className={`section-group-header-row ${isGroupCollapsed ? 'is-collapsed' : 'is-expanded'} ${draggedGroupCode === group.groupCode ? 'sgh-is-dragging' : ''} ${dragOverGroupCode === group.groupCode ? (dragOverGroupPos === 'top' ? 'sgh-drag-over-top' : 'sgh-drag-over-bottom') : ''}`}
                           onClick={() => toggleGroupCollapse(group.groupCode)}
-                          title={`${group.groupTitle} alt başlıklarını ${isGroupCollapsed ? 'genişletmek' : 'daraltmak'} için tıklayın. Yerini değiştirmek için sürükleyin.`}
+                          title={`${group.groupTitle} başlıklarını ${isGroupCollapsed ? 'genişletmek' : 'daraltmak'} için tıklayın. Yerini değiştirmek için sürükleyin.`}
                         >
                           <td colSpan={6} className="section-group-header-cell">
                             <div className="sgh-content">
@@ -668,7 +664,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 <span className="sgh-code-badge">{group.groupCode}</span>
                                 <span className="sgh-title">{group.groupTitle}</span>
                                 <span className="sgh-count-pill">
-                                  {group.items.length} Alt Başlık
+                                  {group.items.length} Başlık
                                   {groupTotalAnalyses > 0 ? ` · ${groupCompletedAnalyses}/${groupTotalAnalyses} Analiz` : ''}
                                 </span>
                               </div>
@@ -683,7 +679,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                   }}
                                 >
                                   <Plus size={12} />
-                                  <span>Alt Başlık Ekle</span>
+                                  <span>Başlık Ekle</span>
                                 </button>
                                 <button
                                   type="button"
@@ -699,7 +695,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                 <button
                                   type="button"
                                   className="action-symbol-btn delete-circle-btn"
-                                  title="2. Düzey Başlığı ve Alt Başlıklarını Kaldır"
+                                  title="2. Düzey Başlığı ve Altındaki Başlıkları Kaldır"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleOpenDeleteHeadingGroup(group.groupCode, group.groupTitle);
@@ -733,7 +729,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                         </tr>
                       )}
 
-                      {/* Alt Başlık Satırları (2., 3. ve 4. Düzey) */}
+                      {/* Başlık ve Analiz Satırları (2., 3. ve 4. Düzey) */}
                       {(!group.isParentGroup || !isGroupCollapsed) && group.items
                         .filter(item => !group.isParentGroup || item.code !== group.groupCode)
                         .map((item, idx) => {
@@ -810,7 +806,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                   toggleGroupCollapse(item.code);
                                 }
                               }}
-                              title={analyses.length > 0 ? `${item.title} analizlerini ${isDetailOpen ? 'kapatmak' : 'görmek'} için tıklayın` : (hasChildren ? `Alt başlıkları ${collapsedGroups[item.code] ? 'genişletmek' : 'daraltmak'} için tıklayın` : undefined)}
+                              title={analyses.length > 0 ? `${item.title} analizlerini ${isDetailOpen ? 'kapatmak' : 'görmek'} için tıklayın` : (hasChildren ? `Başlıkları ${collapsedGroups[item.code] ? 'genişletmek' : 'daraltmak'} için tıklayın` : undefined)}
                             >
                               {/* Kod */}
                               <td className="sec-code" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -867,7 +863,7 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               {/* Rapor Durumu */}
                               <td>
                                 {hasChildren ? (
-                                  <div className="auto-status-indicator" title="Bu başlığın durumu, altındaki alt başlıkların tamamlanma durumuna göre otomatik hesaplanmaktadır.">
+                                  <div className="auto-status-indicator" title="Bu başlığın durumu, altındaki başlıkların ve analizlerin tamamlanma durumuna göre otomatik hesaplanmaktadır.">
                                     <span className={`report-status-badge st-${st.status}`}>
                                       {getStatusLabel(st.status, isSpatialItem)}
                                     </span>
@@ -931,12 +927,12 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                               <td className="row-actions-cell">
                                 {isEditableDegree ? (
                                   <div className="row-actions-group" onClick={e => e.stopPropagation()}>
-                                    {/* 3. Düzey Alt Başlık Ekleme Butonu (Sadece 2. Derece Başlıklarda) */}
+                                    {/* 3. Düzey Başlık Ekleme Butonu (Sadece 2. Derece Başlıklarda) */}
                                     {degree === 2 && (
                                       <button
                                         type="button"
                                         className="action-symbol-btn add-symbol-btn"
-                                        title={`${item.code} altına 3. Düzey alt başlık ekle`}
+                                        title={`${item.code} altına 3. Düzey başlık ekle`}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           handleOpenAddHeading(3, item.code, item.title);
@@ -946,12 +942,12 @@ export const ChapterCard: React.FC<ChapterCardProps> = ({
                                       </button>
                                     )}
 
-                                    {/* 4. Düzey Alt Başlık Ekleme Butonu (Sadece 3. Derece Başlıklarda) */}
+                                    {/* 4. Düzey Analiz / Başlık Ekleme Butonu (Sadece 3. Derece Başlıklarda) */}
                                     {degree === 3 && (
                                       <button
                                         type="button"
                                         className="action-symbol-btn add-symbol-btn"
-                                        title={`${item.code} altına 4. Düzey alt başlık ekle`}
+                                        title={`${item.code} altına 4. Düzey analiz / başlık ekle`}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           handleOpenAddHeading(4, item.code, item.title);

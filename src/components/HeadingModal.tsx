@@ -232,10 +232,10 @@ export const HeadingModal: React.FC<HeadingModalProps> = ({
                   />
                   <span className="form-field-hint">
                     {degree === 2 
-                      ? "2 kademeli ana alt başlık (X.Y)" 
+                      ? "2 kademeli ana başlık (X.Y)" 
                       : degree === 3 
                         ? "3 kademeli hiyerarşi (X.Y.Z)" 
-                        : "4 kademeli alt hiyerarşi (X.Y.Z.W)"}
+                        : "4 kademeli analiz / başlık (X.Y.Z.W)"}
                   </span>
                 </div>
 
